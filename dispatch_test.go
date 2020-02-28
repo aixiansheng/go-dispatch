@@ -13,8 +13,9 @@ func TestSyncOnAsyncQueue(t *testing.T) {
 	ordered := [4]int{}
 
 	for i := 0; i < 4; i++ {
+		j := i
 		Sync(q, func() {
-			ordered[i] = i
+			ordered[j] = j
 			time.Sleep(510 * time.Millisecond)
 		})
 	}
@@ -73,6 +74,33 @@ func TestAsyncOnAsyncQueue(t *testing.T) {
 	elapsed := time.Since(start)
 	if elapsed > 1200 * time.Millisecond {
 		t.Errorf("Async was too slow")
+	}
+}
+
+func TestGroupWaitEarlyReturn(t *testing.T) {
+	q := AsyncQueue()
+	g := NewGroup()
+
+	g.Async(q, func() {
+		time.Sleep(2 * time.Second)
+	})
+
+	returned_in_time := g.Wait(1 * time.Second)
+	if returned_in_time {
+		t.Errorf("Group.Wait failed with an Async job")
+	}
+}
+
+func TestGroupWaitFull(t *testing.T) {
+	q := AsyncQueue()
+	g := NewGroup()
+	g.Async(q, func() {
+		time.Sleep(2 * time.Second)
+	})
+
+	returned_in_time := g.Wait(2100 * time.Millisecond)
+	if !returned_in_time {
+		t.Errorf("Async Job never made Group.Wait finish")
 	}
 }
 

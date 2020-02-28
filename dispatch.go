@@ -17,7 +17,7 @@ type Queue struct {
 }
 
 type Group struct {
-	wg *sync.WaitGroup
+	wg sync.WaitGroup
 }
 
 func (j *Job) run() {
