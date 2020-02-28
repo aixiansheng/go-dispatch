@@ -104,3 +104,46 @@ func TestGroupWaitFull(t *testing.T) {
 	}
 }
 
+func TestGroupWaitMultipleAsync(t *testing.T) {
+	q := AsyncQueue()
+	g := NewGroup()
+	g.Async(q, func() {
+		time.Sleep(2 * time.Second)
+	})
+	g.Async(q, func() {
+		time.Sleep(2 * time.Second)
+	})
+	g.Async(q, func() {
+		time.Sleep(2 * time.Second)
+	})
+	
+
+	returned_in_time := g.Wait(2100 * time.Millisecond)
+	if !returned_in_time {
+		t.Errorf("Multiple Grouped Async Jobs took too long to complete")
+	}
+}
+
+func TestGroupWaitMultipleAsyncOnSyncQueue(t *testing.T) {
+	q := SerialQueue()
+	g := NewGroup()
+	g.Async(q, func() {
+		time.Sleep(2 * time.Second)
+	})
+	g.Async(q, func() {
+		time.Sleep(2 * time.Second)
+	})
+	g.Async(q, func() {
+		time.Sleep(2 * time.Second)
+	})
+
+	returned_early := g.Wait(2 * time.Second + 500 * time.Millisecond)
+	if returned_early {
+		t.Errorf("Multiple Async jobs were submitted to a Serial Queue.  Group.Wait was called with a timeout that should have been hit.  Instead, Wait returned true, indicating that all jobs in the group completed before the timeout.")
+	}
+
+	returned_on_time := g.Wait(4000 * time.Millisecond)
+	if !returned_on_time {
+		t.Errorf("Group Async Jobs on a Serial Queue didn't complete in serial time")
+	}
+}

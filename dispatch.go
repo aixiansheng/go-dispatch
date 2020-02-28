@@ -14,6 +14,9 @@ type Job struct {
 
 type Queue struct {
 	jobs chan *Job
+	pending_cond * sync.Cond
+	pending_lock sync.Mutex
+	pending []*Job
 }
 
 type Group struct {
@@ -39,11 +42,32 @@ func NewJob(f func()) *Job {
 func SerialQueue() *Queue {
 	q := &Queue{
 		jobs: make(chan *Job),
+		pending: make([]*Job, 0, 64),
+		pending_lock: sync.Mutex{},
 	}
+	q.pending_cond = sync.NewCond(&q.pending_lock)
 
 	go func() {
 		for j := range q.jobs {
-			j.run()
+			q.pending_lock.Lock()
+			q.pending = append(q.pending, j)
+			q.pending_lock.Unlock()
+			q.pending_cond.Signal()
+		}
+	}()
+
+	go func() {
+		for {
+			q.pending_lock.Lock()
+			for len(q.pending) == 0 {
+				q.pending_cond.Wait()
+			}
+
+			job := q.pending[0]
+			q.pending = q.pending[1:]
+			q.pending_lock.Unlock()
+
+			job.run()
 		}
 	}()
 
@@ -60,7 +84,6 @@ func AsyncQueue() *Queue {
 			go j.run()
 		}
 	}()
-
 	return q
 }
 
@@ -84,8 +107,8 @@ func (q *Queue) Enqueue(j *Job) {
 }
 
 func (g *Group) Sync(q *Queue, f func()) {
+	g.wg.Add(1)
 	j := NewJob(func() {
-		g.wg.Add(1)
 		f()
 		g.wg.Done()
 	})
@@ -94,8 +117,8 @@ func (g *Group) Sync(q *Queue, f func()) {
 }
 
 func (g *Group) Async(q *Queue, f func()) {
+	g.wg.Add(1)
 	j := NewJob(func() {
-		g.wg.Add(1)
 		f()
 		g.wg.Done()
 	})
