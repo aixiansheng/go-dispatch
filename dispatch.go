@@ -7,46 +7,51 @@ import (
 
 const FOREVER int64 = 0
 
-type Job struct {
+type job struct {
 	f    func()
 	done chan struct{}
 }
 
 type Queue struct {
-	jobs chan *Job
-	pending_cond * sync.Cond
+	jobs         chan *job
+	pending_cond *sync.Cond
 	pending_lock sync.Mutex
-	pending []*Job
+	pending      []*job
 }
 
 type Group struct {
 	wg sync.WaitGroup
 }
 
-func (j *Job) run() {
+func (j *job) run() {
 	j.f()
 	close(j.done)
 }
 
-func (j *Job) Wait() {
+func (j *job) wait() {
 	<-j.done
 }
 
-func NewJob(f func()) *Job {
-	return &Job{
+func newJob(f func()) *job {
+	return &job{
 		f:    f,
 		done: make(chan struct{}),
 	}
 }
 
+// A Queue whose jobs will be executed one-by-one.
 func SerialQueue() *Queue {
+	// Using a buffered channel might have worked alright, but if the caller ever
+	// guessed the buffer size incorrectly, enqueue operations would have started
+	// blocking, violating the rule that Async should return immediately.  So, it
+	// uses sync.Mutex and sync.Cond instead.
 	q := &Queue{
-		jobs: make(chan *Job),
-		pending: make([]*Job, 0, 64),
-		pending_lock: sync.Mutex{},
+		jobs:    make(chan *job),
+		pending: make([]*job, 0, 64),
 	}
 	q.pending_cond = sync.NewCond(&q.pending_lock)
 
+	// Quickly read jobs from the incoming chan and enqueue them.
 	go func() {
 		for j := range q.jobs {
 			q.pending_lock.Lock()
@@ -56,6 +61,7 @@ func SerialQueue() *Queue {
 		}
 	}()
 
+	// Dequeue jobs and run them, one at a time.
 	go func() {
 		for {
 			q.pending_lock.Lock()
@@ -74,9 +80,10 @@ func SerialQueue() *Queue {
 	return q
 }
 
+// A Queue whose jobs are run with concurrency and in an undeterministic order.
 func AsyncQueue() *Queue {
 	q := &Queue{
-		jobs: make(chan *Job),
+		jobs: make(chan *job),
 	}
 
 	go func() {
@@ -87,44 +94,51 @@ func AsyncQueue() *Queue {
 	return q
 }
 
+// Enqueue the job and wait for it to complete.
 func Sync(q *Queue, f func()) {
-	j := NewJob(f)
-	q.Enqueue(j)
-	j.Wait()
+	j := newJob(f)
+	q.enqueue(j)
+	j.wait()
 }
 
+// Enqueue the job and return immediately.
 func Async(q *Queue, f func()) {
-	j := NewJob(f)
-	q.Enqueue(j)
+	j := newJob(f)
+	q.enqueue(j)
 }
 
+// A Group collects jobs so that their combined completion may be waited upon.
 func NewGroup() *Group {
 	return &Group{}
 }
 
-func (q *Queue) Enqueue(j *Job) {
+func (q *Queue) enqueue(j *job) {
 	q.jobs <- j
 }
 
+// Enqueue the job and wait for it to complete.
 func (g *Group) Sync(q *Queue, f func()) {
 	g.wg.Add(1)
-	j := NewJob(func() {
+	j := newJob(func() {
 		f()
 		g.wg.Done()
 	})
-	q.Enqueue(j)
-	j.Wait()
+	q.enqueue(j)
+	j.wait()
 }
 
+// Enqueue the job and return immediately.
 func (g *Group) Async(q *Queue, f func()) {
 	g.wg.Add(1)
-	j := NewJob(func() {
+	j := newJob(func() {
 		f()
 		g.wg.Done()
 	})
-	q.Enqueue(j)
+	q.enqueue(j)
 }
 
+// Wait for all jobs enqueued by group to complete, returning false if it times out.
+// FOREVER (0) should be used to wait forever.
 func (g *Group) Wait(d time.Duration) bool {
 	c := make(chan struct{})
 	go func() {

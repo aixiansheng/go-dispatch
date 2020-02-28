@@ -7,9 +7,9 @@ import (
 
 func TestSyncOnAsyncQueue(t *testing.T) {
 	q := AsyncQueue()
-	
+
 	start := time.Now()
-	
+
 	ordered := [4]int{}
 
 	for i := 0; i < 4; i++ {
@@ -21,7 +21,7 @@ func TestSyncOnAsyncQueue(t *testing.T) {
 	}
 
 	elapsed := time.Since(start)
-	if elapsed < 2 * time.Second {
+	if elapsed < 2*time.Second {
 		t.Errorf("Sync was too fast")
 	}
 
@@ -34,9 +34,9 @@ func TestSyncOnAsyncQueue(t *testing.T) {
 
 func TestAsyncOnSerialQueue(t *testing.T) {
 	q := SerialQueue()
-	
+
 	start := time.Now()
-	
+
 	c := make(chan int, 4)
 
 	for i := 0; i < 4; i++ {
@@ -55,14 +55,14 @@ func TestAsyncOnSerialQueue(t *testing.T) {
 	}
 
 	elapsed := time.Since(start)
-	if elapsed < 4 * time.Second {
+	if elapsed < 4*time.Second {
 		t.Errorf("Async was too fast")
 	}
 }
 
 func TestAsyncOnAsyncQueue(t *testing.T) {
 	q := AsyncQueue()
-	
+
 	start := time.Now()
 
 	for i := 0; i < 4; i++ {
@@ -72,7 +72,7 @@ func TestAsyncOnAsyncQueue(t *testing.T) {
 	}
 
 	elapsed := time.Since(start)
-	if elapsed > 1200 * time.Millisecond {
+	if elapsed > 1200*time.Millisecond {
 		t.Errorf("Async was too slow")
 	}
 }
@@ -116,7 +116,6 @@ func TestGroupWaitMultipleAsync(t *testing.T) {
 	g.Async(q, func() {
 		time.Sleep(2 * time.Second)
 	})
-	
 
 	returned_in_time := g.Wait(2100 * time.Millisecond)
 	if !returned_in_time {
@@ -137,7 +136,7 @@ func TestGroupWaitMultipleAsyncOnSyncQueue(t *testing.T) {
 		time.Sleep(2 * time.Second)
 	})
 
-	returned_early := g.Wait(2 * time.Second + 500 * time.Millisecond)
+	returned_early := g.Wait(2*time.Second + 500*time.Millisecond)
 	if returned_early {
 		t.Errorf("Multiple Async jobs were submitted to a Serial Queue.  Group.Wait was called with a timeout that should have been hit.  Instead, Wait returned true, indicating that all jobs in the group completed before the timeout.")
 	}
