@@ -6,6 +6,34 @@ import (
 	"time"
 )
 
+func TestGroupEnterLeave(t *testing.T) {
+	q := AsyncQueue()
+	g := NewGroup()
+	c := make(chan struct{})
+	entered := make(chan struct{})
+
+	g.Async(q, func() {
+		g.Enter()
+		close(entered)
+		<-c
+	})
+
+	<-entered
+
+	group_was_done := g.Wait(400 * time.Millisecond)
+	if group_was_done {
+		t.Errorf("Group should not have been done.")
+	}
+
+	close(c)
+	g.Leave()
+
+	group_was_done = g.Wait(400 * time.Millisecond)
+	if !group_was_done {
+		t.Errorf("Leave didn't cause the group to complete")
+	}
+}
+
 // Submit jobs that sleep for the specified duration until the returned channel is closed.
 // Each job will atomically increment the counter while it's running and decrement it when it's done.
 func submitAsyncJobsWithCounter(q *Queue, counter *int64, duration time.Duration) chan struct{} {

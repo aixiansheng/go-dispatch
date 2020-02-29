@@ -191,6 +191,16 @@ func (g *Group) Wait(d time.Duration) bool {
 	}
 }
 
+// Increment the count of outstanding jobs in the group.
+func (g *Group) Enter() {
+	g.wg.Add(1)
+}
+
+// Decrement the count of outstanding jobs in the group.
+func (g *Group) Leave() {
+	g.wg.Done()
+}
+
 // Submit a barrier job to the queue and wait for it to complete.
 // The barrier won't execute until all previously submitted jobs are complete.
 // All subsequently enqueued jobs will wait for the barrier to complete before executing.
