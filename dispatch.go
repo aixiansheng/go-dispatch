@@ -192,10 +192,19 @@ func (g *Group) Wait(d time.Duration) bool {
 }
 
 // Submit a barrier job to the queue and wait for it to complete.
-// The barrier job won't execute until all previously submitted jobs are complete.
+// The barrier won't execute until all previously submitted jobs are complete.
 // All subsequently enqueued jobs will wait for the barrier to complete before executing.
 func (q *Queue) SyncBarrier(f func()) {
 	j := newBarrierJob(f)
 	q.enqueue(j)
 	j.wait()
+}
+
+
+// Submit a barrier job to the queue and return immediately.
+// The barrier won't execute until all previously submitted jobs are complete.
+// All subsequently enqueued jobs will wait for the barrier to complete before executing.
+func (q *Queue) AsyncBarrier(f func()) {
+	j := newBarrierJob(f)
+	q.enqueue(j)
 }

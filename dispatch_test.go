@@ -30,6 +30,33 @@ func submitAsyncJobsWithCounter(q *Queue, counter *int64, duration time.Duration
 	return c
 }
 
+func TestAsyncBarrier(t *testing.T) {
+	var currently_running int64
+	q := AsyncQueue()
+	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
+
+	time.Sleep(200 * time.Millisecond)
+
+	waiter := make(chan struct{})
+	q.AsyncBarrier(func() {
+		cur := atomic.LoadInt64(&currently_running)
+		if cur != 0 {
+			t.Errorf("Jobs were executing while the barrier was running")
+		}
+
+		time.Sleep(500 * time.Millisecond)
+
+		cur = atomic.LoadInt64(&currently_running)
+		if cur != 0 {
+			t.Errorf("A job ran while the barrier was executing")
+		}
+		close(waiter)
+	})
+
+	<-waiter
+	close(c)
+}
+
 func TestSyncBarrier(t *testing.T) {
 	var currently_running int64
 	q := AsyncQueue()
@@ -38,7 +65,6 @@ func TestSyncBarrier(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	q.SyncBarrier(func() {
-		t.Logf("barrier")
 		cur := atomic.LoadInt64(&currently_running)
 		if cur != 0 {
 			t.Errorf("Jobs were executing while the barrier was running")
@@ -70,7 +96,6 @@ func TestNonBarrierSyncIsConcurrent(t *testing.T) {
 		}
 
 		time.Sleep(500 * time.Millisecond)
-		t.Logf("There were %v concurrent jobs", cur)
 
 		cur = atomic.LoadInt64(&currently_running)
 		if cur == 0 {
