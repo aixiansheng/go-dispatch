@@ -146,3 +146,4 @@ func TestGroupWaitMultipleAsyncOnSyncQueue(t *testing.T) {
 		t.Errorf("Group Async Jobs on a Serial Queue didn't complete in serial time")
 	}
 }
+

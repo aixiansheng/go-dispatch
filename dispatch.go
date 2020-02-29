@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const FOREVER int64 = 0
+const FOREVER time.Duration = 0
 
 type job struct {
 	f    func()
