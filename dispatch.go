@@ -8,8 +8,9 @@ import (
 const FOREVER time.Duration = 0
 
 type job struct {
-	f    func()
-	done chan struct{}
+	f       func()
+	done    chan struct{}
+	barrier bool
 }
 
 type Queue struct {
@@ -17,6 +18,7 @@ type Queue struct {
 	pending_cond *sync.Cond
 	pending_lock sync.Mutex
 	pending      []*job
+	executing    sync.WaitGroup
 }
 
 type Group struct {
@@ -39,19 +41,16 @@ func newJob(f func()) *job {
 	}
 }
 
-// A Queue whose jobs will be executed one-by-one.
-func SerialQueue() *Queue {
-	// Using a buffered channel might have worked alright, but if the caller ever
-	// guessed the buffer size incorrectly, enqueue operations would have started
-	// blocking, violating the rule that Async should return immediately.  So, it
-	// uses sync.Mutex and sync.Cond instead.
-	q := &Queue{
-		jobs:    make(chan *job),
-		pending: make([]*job, 0, 64),
+func newBarrierJob(f func()) *job {
+	return &job{
+		f:       f,
+		done:    make(chan struct{}),
+		barrier: true,
 	}
-	q.pending_cond = sync.NewCond(&q.pending_lock)
+}
 
-	// Quickly read jobs from the incoming chan and enqueue them.
+// Quickly read jobs from the incoming chan and enqueue them.
+func (q *Queue) startJobReceiver() {
 	go func() {
 		for j := range q.jobs {
 			q.pending_lock.Lock()
@@ -60,8 +59,10 @@ func SerialQueue() *Queue {
 			q.pending_cond.Signal()
 		}
 	}()
+}
 
-	// Dequeue jobs and run them, one at a time.
+// Dequeue jobs and call the handler function on them.
+func (q *Queue) startJobRunner(f func(j *job)) {
 	go func() {
 		for {
 			q.pending_lock.Lock()
@@ -73,9 +74,24 @@ func SerialQueue() *Queue {
 			q.pending = q.pending[1:]
 			q.pending_lock.Unlock()
 
-			job.run()
+			f(job)
 		}
 	}()
+}
+
+// A Queue whose jobs will be executed one-by-one.
+func SerialQueue() *Queue {
+	q := &Queue{
+		jobs:    make(chan *job),
+		pending: make([]*job, 0, 64),
+	}
+	q.pending_cond = sync.NewCond(&q.pending_lock)
+
+	q.startJobReceiver()
+	q.startJobRunner(func(j *job) {
+		j.run()
+		j.wait()
+	})
 
 	return q
 }
@@ -83,26 +99,42 @@ func SerialQueue() *Queue {
 // A Queue whose jobs are run with concurrency and in an undeterministic order.
 func AsyncQueue() *Queue {
 	q := &Queue{
-		jobs: make(chan *job),
+		jobs:    make(chan *job),
+		pending: make([]*job, 0, 64),
 	}
+	q.pending_cond = sync.NewCond(&q.pending_lock)
 
-	go func() {
-		for j := range q.jobs {
-			go j.run()
+	q.startJobReceiver()
+	q.startJobRunner(func(j *job) {
+		if j.barrier {
+			// Make sure the currently executing jobs finish before executing the,
+			// barrier and the wait for it to finish.
+			q.executing.Wait()
+			j.run()
+			j.wait()
+		} else {
+			// Track the other asynchronously executing jobs with a WaitGroup.
+			q.executing.Add(1)
+			go func() {
+				j.run()
+				j.wait()
+				q.executing.Done()
+			}()
 		}
-	}()
+	})
+
 	return q
 }
 
 // Enqueue the job and wait for it to complete.
-func Sync(q *Queue, f func()) {
+func (q *Queue) Sync(f func()) {
 	j := newJob(f)
 	q.enqueue(j)
 	j.wait()
 }
 
 // Enqueue the job and return immediately.
-func Async(q *Queue, f func()) {
+func (q *Queue) Async(f func()) {
 	j := newJob(f)
 	q.enqueue(j)
 }
@@ -157,4 +189,13 @@ func (g *Group) Wait(d time.Duration) bool {
 		<-c
 		return true
 	}
+}
+
+// Submit a barrier job to the queue and wait for it to complete.
+// The barrier job won't execute until all previously submitted jobs are complete.
+// All subsequently enqueued jobs will wait for the barrier to complete before executing.
+func (q *Queue) SyncBarrier(f func()) {
+	j := newBarrierJob(f)
+	q.enqueue(j)
+	j.wait()
 }

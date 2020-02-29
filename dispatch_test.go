@@ -1,9 +1,86 @@
 package dispatch
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// Submit jobs that sleep for the specified duration until the returned channel is closed.
+// Each job will atomically increment the counter while it's running and decrement it when it's done.
+func submitAsyncJobsWithCounter(q *Queue, counter *int64, duration time.Duration) chan struct{} {
+	c := make(chan struct{})
+
+	go func() {
+		for {
+			select {
+			case <-c:
+				return
+			default:
+				time.Sleep(20 * time.Millisecond)
+				q.Async(func() {
+					atomic.AddInt64(counter, 1)
+					time.Sleep(duration)
+					atomic.AddInt64(counter, -1)
+				})
+			}
+		}
+	}()
+
+	return c
+}
+
+func TestSyncBarrier(t *testing.T) {
+	var currently_running int64
+	q := AsyncQueue()
+	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
+
+	time.Sleep(200 * time.Millisecond)
+
+	q.SyncBarrier(func() {
+		t.Logf("barrier")
+		cur := atomic.LoadInt64(&currently_running)
+		if cur != 0 {
+			t.Errorf("Jobs were executing while the barrier was running")
+		}
+
+		time.Sleep(500 * time.Millisecond)
+
+		cur = atomic.LoadInt64(&currently_running)
+		if cur != 0 {
+			t.Errorf("A job ran while the barrier was executing")
+		}
+	})
+
+	time.Sleep(400 * time.Millisecond)
+	close(c)
+}
+
+func TestNonBarrierSyncIsConcurrent(t *testing.T) {
+	var currently_running int64
+	q := AsyncQueue()
+	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
+
+	time.Sleep(200 * time.Millisecond)
+
+	q.Sync(func() {
+		cur := atomic.LoadInt64(&currently_running)
+		if cur == 0 {
+			t.Errorf("Jobs were not executing while the sync job was running")
+		}
+
+		time.Sleep(500 * time.Millisecond)
+		t.Logf("There were %v concurrent jobs", cur)
+
+		cur = atomic.LoadInt64(&currently_running)
+		if cur == 0 {
+			t.Errorf("Jobs were still not executing while the sync job was running")
+		}
+	})
+
+	time.Sleep(200 * time.Millisecond)
+	close(c)
+}
 
 func TestSyncOnAsyncQueue(t *testing.T) {
 	q := AsyncQueue()
@@ -14,7 +91,7 @@ func TestSyncOnAsyncQueue(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		j := i
-		Sync(q, func() {
+		q.Sync(func() {
 			ordered[j] = j
 			time.Sleep(510 * time.Millisecond)
 		})
@@ -41,7 +118,7 @@ func TestAsyncOnSerialQueue(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		j := i
-		Async(q, func() {
+		q.Async(func() {
 			time.Sleep(1 * time.Second)
 			c <- j
 		})
@@ -66,7 +143,7 @@ func TestAsyncOnAsyncQueue(t *testing.T) {
 	start := time.Now()
 
 	for i := 0; i < 4; i++ {
-		Async(q, func() {
+		q.Async(func() {
 			time.Sleep(1 * time.Second)
 		})
 	}
@@ -146,4 +223,3 @@ func TestGroupWaitMultipleAsyncOnSyncQueue(t *testing.T) {
 		t.Errorf("Group Async Jobs on a Serial Queue didn't complete in serial time")
 	}
 }
-
