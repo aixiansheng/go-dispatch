@@ -22,7 +22,8 @@ type Queue struct {
 }
 
 type Group struct {
-	wg sync.WaitGroup
+	wg              sync.WaitGroup
+	yetToLeaveQueue *Queue
 }
 
 func (j *job) run() {
@@ -141,7 +142,9 @@ func (q *Queue) Async(f func()) {
 
 // A Group collects jobs so that their combined completion may be waited upon.
 func NewGroup() *Group {
-	return &Group{}
+	return &Group{
+		yetToLeaveQueue: AsyncQueue(),
+	}
 }
 
 func (q *Queue) enqueue(j *job) {
@@ -155,6 +158,11 @@ func (g *Group) Sync(q *Queue, f func()) {
 		f()
 		g.wg.Done()
 	})
+
+	g.yetToLeaveQueue.Async(func() {
+		j.wait()
+	})
+
 	q.enqueue(j)
 	j.wait()
 }
@@ -166,6 +174,11 @@ func (g *Group) Async(q *Queue, f func()) {
 		f()
 		g.wg.Done()
 	})
+
+	g.yetToLeaveQueue.Async(func() {
+		j.wait()
+	})
+
 	q.enqueue(j)
 }
 
@@ -191,6 +204,14 @@ func (g *Group) Wait(d time.Duration) bool {
 	}
 }
 
+// Schedule the job on the specified queue when jobs previously submitted to the
+// group have completed.
+func (g *Group) Notify(q *Queue, f func()) {
+	g.yetToLeaveQueue.AsyncBarrier(func() {
+		q.Async(f)
+	})
+}
+
 // Increment the count of outstanding jobs in the group.
 func (g *Group) Enter() {
 	g.wg.Add(1)
@@ -209,7 +230,6 @@ func (q *Queue) SyncBarrier(f func()) {
 	q.enqueue(j)
 	j.wait()
 }
-
 
 // Submit a barrier job to the queue and return immediately.
 // The barrier won't execute until all previously submitted jobs are complete.

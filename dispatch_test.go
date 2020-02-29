@@ -58,6 +58,43 @@ func submitAsyncJobsWithCounter(q *Queue, counter *int64, duration time.Duration
 	return c
 }
 
+func TestGroupNotify(t *testing.T) {
+	// This may be impossible to test without internal knowledge of the
+	// Group and Queues since the notify task is submitted when prior jobs
+	// have completed, but it may not run until later...
+	q1 := AsyncQueue()
+	q2 := AsyncQueue()
+	c1 := make(chan struct{})
+	c2 := make(chan struct{})
+	g := NewGroup()
+	var cnt int64
+
+	g.Async(q1, func() {
+		atomic.AddInt64(&cnt, 1)
+		<-c1
+		atomic.AddInt64(&cnt, 1)
+	})
+
+	g.Async(q2, func() {
+		atomic.AddInt64(&cnt, 1)
+		<-c2
+		atomic.AddInt64(&cnt, 1)
+	})
+
+	g.Notify(q1, func() {
+		cur := atomic.LoadInt64(&cnt)
+		if cur != 4 {
+			t.Errorf("Previously submitted jobs did not run before notify")
+		}
+	})
+
+	// This can't test what happens if jobs are submitted after the notify is
+	// registered because enqueue can't be observed..
+
+	close(c1)
+	close(c2)
+}
+
 func TestAsyncBarrier(t *testing.T) {
 	var currently_running int64
 	q := AsyncQueue()
