@@ -34,6 +34,27 @@ func TestGroupEnterLeave(t *testing.T) {
 	}
 }
 
+func TestWaitRace(t *testing.T) {
+	g := NewGroup()
+	go func() {
+		for {
+			go func() {
+				g.Wait(FOREVER)
+			}()
+		}
+	}()
+	time.Sleep(1) // a crude test
+	q := AsyncQueue()
+	for i := 0; i < 50; i++ {
+		g.Async(q, func() {
+			time.Sleep(1)
+		})
+	}
+
+	g.Wait(3 * time.Second)
+	time.Sleep(3 * time.Second)
+}
+
 // Submit jobs that sleep for the specified duration until the returned channel is closed.
 // Each job will atomically increment the counter while it's running and decrement it when it's done.
 func submitAsyncJobsWithCounter(q *Queue, counter *int64, duration time.Duration) chan struct{} {
