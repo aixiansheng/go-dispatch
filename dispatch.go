@@ -1,12 +1,13 @@
 package dispatch
 
 import (
+	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 const FOREVER time.Duration = 0
-
 
 enum BlockType {
 	Default,
@@ -16,7 +17,9 @@ enum BlockType {
 
 type countedBlockChan struct {
 	c chan<- *Block
+	l sync.Mutex
 	count uint64
+	size uint64
 }
 
 type Block struct {
@@ -47,12 +50,31 @@ type Queue struct {
 //	SetSpecific(key string, value interface{})
 //}
 
-type SerialQueue struct {
-
+func NewCountedBlockChan(size uint64) *countedBlockChan {
+	return &countedBlockChan{
+		c: make(chan<- *Block, size),
+		size: size,
+	}
 }
 
-type AsyncQueue struct {
+func (cbc *countedBlockChan) enqueue(b *Block) bool {
+	select {
+	case cbc.c <- b:
+		atomic.AddUint64(&cbc.count, 1)
+		return true
+	default:
+		return false
+	}
+}
 
+func (cbc *countedBlockChan) dequeue() *Block {
+	select {
+	case b := <- cbc.c:
+		atomic.AddUint64(&cbc.count, -1)
+		return b
+	default:
+		return nil
+	}
 }
 
 type Group struct {
@@ -212,8 +234,7 @@ func (g *Group) Leave() {
 	close(c)
 }
 
-// abstract it so that it has a counter...
-func (q *Queue) getEnqueuer() *countedBlockChan {
+func (q *Queue) getBlockChan() *countedBlockChan {
 	return q.enqueueChan.Load()
 }
 
@@ -223,7 +244,7 @@ func (q *Queue) enqueueChanFull() {
 
 func (q *Queue) enqueue(b *Block) uint64 {
 	for {
-		select c := q.getEnqueuer() {
+		select c := q.getBlockChan() {
 		case c <- b:
 			return
 		default:
