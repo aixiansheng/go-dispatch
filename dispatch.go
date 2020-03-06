@@ -15,13 +15,6 @@ enum BlockType {
 	Apply
 }
 
-type countedBlockChan struct {
-	c chan<- *Block
-	l sync.Mutex
-	count uint64
-	size uint64
-}
-
 type Block struct {
 	f       func()
 	done    chan struct{}
@@ -49,33 +42,6 @@ type Queue struct {
 //	GetSpecific(key string) (interface{}, bool)
 //	SetSpecific(key string, value interface{})
 //}
-
-func NewCountedBlockChan(size uint64) *countedBlockChan {
-	return &countedBlockChan{
-		c: make(chan<- *Block, size),
-		size: size,
-	}
-}
-
-func (cbc *countedBlockChan) enqueue(b *Block) bool {
-	select {
-	case cbc.c <- b:
-		atomic.AddUint64(&cbc.count, 1)
-		return true
-	default:
-		return false
-	}
-}
-
-func (cbc *countedBlockChan) dequeue() *Block {
-	select {
-	case b := <- cbc.c:
-		atomic.AddUint64(&cbc.count, -1)
-		return b
-	default:
-		return nil
-	}
-}
 
 type Group struct {
 
@@ -157,7 +123,7 @@ func (q *Queue) Sync(f func()) {
 }
 
 func (q *Queue) AfterBlock(d time.Duration, b *Block) {
-	<-time.After
+	<-time.After(d)
 	q.AsyncBlock(b)
 }
 
@@ -188,8 +154,12 @@ func GroupCreate() *Group {
 }
 
 func (g *Group) AsyncBlock(q *Queue, b *Block) {
-	g.enqueue(b)
-	q.enqueue(b)
+	g.Enter()
+	q.AsyncBlock(b)
+	go func() {
+		b.Wait(FOREVER)
+		g.Leave()
+	}()
 }
 
 func (g *Group) Async(q *Queue, f func()) {
@@ -197,9 +167,8 @@ func (g *Group) Async(q *Queue, f func()) {
 }
 
 func (g *Group) NotifyBlock(q *Queue, b *Block) {
-	g.enqueue(BlockCreate(Barrier, func() {
-		q.AsyncBlock(b)
-	})
+	g.Wait(FOREVER)
+	q.AsyncBlock(b)
 }
 
 func (g *Group) Notify(q *Queue, f func()) {
@@ -207,52 +176,38 @@ func (g *Group) Notify(q *Queue, f func()) {
 }
 
 func (g *Group) Wait(d time.Duration) bool {
-	waiter := g.queue.notifyEmpty()
-	if FOREVER != d {
+	if FOREVER == d {
 		select {
-		case <-waiter:
-			return true
-		case <-time.After(d)
+		case <-time.After(d):
 			return false
+		case <-g.empty:
+			return true
 		}
 	} else {
-		<-waiter
+		<-g.empty
 		return true
 	}
 }
 
 func (g *Group) Enter() {
-	c := make(chan struct{})
-	g.enqueue(BlockCreate(Default, func() {
-		<-c
-	})
-	g.entered <- c
+	atomic.AddInt64(g.count, 1)
 }
 
 func (g *Group) Leave() {
-	c := <-g.entered
-	close(c)
-}
+	count := atomic.AddInt64(g.count, -1)
+	if 0 > count {
+		panic("Leave was called more times than Enter"
+	}
 
-func (q *Queue) getBlockChan() *countedBlockChan {
-	return q.enqueueChan.Load()
-}
-
-func (q *Queue) enqueueChanFull() {
-
-}
-
-func (q *Queue) enqueue(b *Block) uint64 {
-	for {
-		select c := q.getBlockChan() {
-		case c <- b:
-			return
-		default:
-			q.enqueueChanFull()
+	if 0 == count {
+		for {
+			select {
+			case: g.empty <- struct{}
+			default:
+				return
+			}
 		}
 	}
 }
 
-func (g *Group) enqueue(b *Block) uint64 {
-}
 
