@@ -334,3 +334,8 @@ func TestGroupWaitMultipleAsyncOnSyncQueue(t *testing.T) {
 		t.Errorf("Group Async Jobs on a Serial Queue didn't complete in serial time")
 	}
 }
+
+// tests to do:
+// Block.Notify() and other Block funcs
+// sequential barriers
+// better tests for concurrency (see sync_tests.go)
