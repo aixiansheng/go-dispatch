@@ -335,7 +335,66 @@ func TestGroupWaitMultipleAsyncOnSyncQueue(t *testing.T) {
 	}
 }
 
-// tests to do:
-// Block.Notify() and other Block funcs
-// sequential barriers
-// better tests for concurrency (see sync_tests.go)
+func TestBlockPerform(t *testing.T) {
+	var x uint64
+	b := BlockCreate(Default, func() {
+		atomic.AddUint64(&x, 1)
+	})
+	b.Perform()
+
+	if x != 1 {
+		t.Errorf("Block didn't perform")
+	}
+}
+
+func TestBlockNotify(t *testing.T) {
+	var x uint64
+
+	c := make(chan struct{})
+	q := QueueCreate(Serial)
+	q.Async(func() {
+		<-c
+		atomic.AddUint64(&x, 1)
+	})
+	b := BlockCreate(Default, func() {
+		atomic.AddUint64(&x, 1)
+	})
+	q.AsyncBlock(b)
+
+	q2 := QueueCreate(Async)
+	b.Notify(q2, func() {
+		if x != 2 {
+			t.Errorf("Previous 2 blocks didn't run before Block.Notify block ran")
+		}
+	})
+
+	close(c)
+}
+
+func TestSequentialBarriers(t *testing.T) {
+	var x uint64
+	q := QueueCreate(Async)
+	q.Async(func() {
+		<-time.After(500 * time.Millisecond)
+		atomic.AddUint64(&x, 1)
+	})
+	q.BarrierAsync(func() {
+		c := atomic.AddUint64(&x, 1)
+		if c != 1 {
+			t.Errorf("Barrier 1 failed to wait for prior block")
+		}
+	})
+	q.BarrierAsync(func() {
+		<-time.After(500 * time.Millisecond)
+		c := atomic.AddUint64(&x, 1)
+		if c != 3 {
+			t.Errorf("Barrier 2 in sequential barrier test didn't wait for first barrier")
+		}
+	})
+	q.Async(func() {
+		c := atomic.AddUint64(&x, 1)
+		if c != 4 {
+			t.Errorf("Final async block didn't wait for prior barriers to finish executing")
+		}
+	})
+}

@@ -74,11 +74,15 @@ func (b *Block) Perform() {
 	close(b.done)
 }
 
-func (b *Block) Notify(q *Queue, f func()) {
+func (b *Block) NotifyBlock(q *Queue, n *Block) {
 	go func() {
 		b.Wait(FOREVER)
-		q.Async(f)
+		q.AsyncBlock(n)
 	}()
+}
+
+func (b *Block) Notify(q *Queue, f func()) {
+	b.NotifyBlock(q, BlockCreate(Default, f))
 }
 
 func (b *Block) Wait(d time.Duration) bool {
