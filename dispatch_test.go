@@ -7,8 +7,8 @@ import (
 )
 
 func TestGroupEnterLeave(t *testing.T) {
-	q := AsyncQueue()
-	g := NewGroup()
+	q := QueueCreate(Async)
+	g := GroupCreate()
 	c := make(chan struct{})
 	entered := make(chan struct{})
 
@@ -28,14 +28,14 @@ func TestGroupEnterLeave(t *testing.T) {
 	close(c)
 	g.Leave()
 
-	group_was_done = g.Wait(400 * time.Millisecond)
+	group_was_done = g.Wait(1 * time.Second)
 	if !group_was_done {
 		t.Errorf("Leave didn't cause the group to complete")
 	}
 }
 
 func TestWaitRace(t *testing.T) {
-	g := NewGroup()
+	g := GroupCreate()
 	go func() {
 		for {
 			go func() {
@@ -44,7 +44,7 @@ func TestWaitRace(t *testing.T) {
 		}
 	}()
 	time.Sleep(1) // a crude test
-	q := AsyncQueue()
+	q := QueueCreate(Async)
 	for i := 0; i < 50; i++ {
 		g.Async(q, func() {
 			time.Sleep(1)
@@ -83,11 +83,11 @@ func TestGroupNotify(t *testing.T) {
 	// This may be impossible to test without internal knowledge of the
 	// Group and Queues since the notify task is submitted when prior jobs
 	// have completed, but it may not run until later...
-	q1 := AsyncQueue()
-	q2 := AsyncQueue()
+	q1 := QueueCreate(Async)
+	q2 := QueueCreate(Async)
 	c1 := make(chan struct{})
 	c2 := make(chan struct{})
-	g := NewGroup()
+	g := GroupCreate()
 	var cnt int64
 
 	g.Async(q1, func() {
@@ -118,13 +118,13 @@ func TestGroupNotify(t *testing.T) {
 
 func TestAsyncBarrier(t *testing.T) {
 	var currently_running int64
-	q := AsyncQueue()
+	q := QueueCreate(Async)
 	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
 
 	time.Sleep(200 * time.Millisecond)
 
 	waiter := make(chan struct{})
-	q.AsyncBarrier(func() {
+	q.BarrierAsync(func() {
 		cur := atomic.LoadInt64(&currently_running)
 		if cur != 0 {
 			t.Errorf("Jobs were executing while the barrier was running")
@@ -145,12 +145,12 @@ func TestAsyncBarrier(t *testing.T) {
 
 func TestSyncBarrier(t *testing.T) {
 	var currently_running int64
-	q := AsyncQueue()
+	q := QueueCreate(Async)
 	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
 
 	time.Sleep(200 * time.Millisecond)
 
-	q.SyncBarrier(func() {
+	q.BarrierSync(func() {
 		cur := atomic.LoadInt64(&currently_running)
 		if cur != 0 {
 			t.Errorf("Jobs were executing while the barrier was running")
@@ -170,7 +170,7 @@ func TestSyncBarrier(t *testing.T) {
 
 func TestNonBarrierSyncIsConcurrent(t *testing.T) {
 	var currently_running int64
-	q := AsyncQueue()
+	q := QueueCreate(Async)
 	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
 
 	time.Sleep(200 * time.Millisecond)
@@ -194,7 +194,7 @@ func TestNonBarrierSyncIsConcurrent(t *testing.T) {
 }
 
 func TestSyncOnAsyncQueue(t *testing.T) {
-	q := AsyncQueue()
+	q := QueueCreate(Async)
 
 	start := time.Now()
 
@@ -221,7 +221,7 @@ func TestSyncOnAsyncQueue(t *testing.T) {
 }
 
 func TestAsyncOnSerialQueue(t *testing.T) {
-	q := SerialQueue()
+	q := QueueCreate(Serial)
 
 	start := time.Now()
 
@@ -249,7 +249,7 @@ func TestAsyncOnSerialQueue(t *testing.T) {
 }
 
 func TestAsyncOnAsyncQueue(t *testing.T) {
-	q := AsyncQueue()
+	q := QueueCreate(Async)
 
 	start := time.Now()
 
@@ -266,8 +266,8 @@ func TestAsyncOnAsyncQueue(t *testing.T) {
 }
 
 func TestGroupWaitEarlyReturn(t *testing.T) {
-	q := AsyncQueue()
-	g := NewGroup()
+	q := QueueCreate(Async)
+	g := GroupCreate()
 
 	g.Async(q, func() {
 		time.Sleep(2 * time.Second)
@@ -280,8 +280,8 @@ func TestGroupWaitEarlyReturn(t *testing.T) {
 }
 
 func TestGroupWaitFull(t *testing.T) {
-	q := AsyncQueue()
-	g := NewGroup()
+	q := QueueCreate(Async)
+	g := GroupCreate()
 	g.Async(q, func() {
 		time.Sleep(2 * time.Second)
 	})
@@ -293,8 +293,8 @@ func TestGroupWaitFull(t *testing.T) {
 }
 
 func TestGroupWaitMultipleAsync(t *testing.T) {
-	q := AsyncQueue()
-	g := NewGroup()
+	q := QueueCreate(Async)
+	g := GroupCreate()
 	g.Async(q, func() {
 		time.Sleep(2 * time.Second)
 	})
@@ -312,8 +312,8 @@ func TestGroupWaitMultipleAsync(t *testing.T) {
 }
 
 func TestGroupWaitMultipleAsyncOnSyncQueue(t *testing.T) {
-	q := SerialQueue()
-	g := NewGroup()
+	q := QueueCreate(Serial)
+	g := GroupCreate()
 	g.Async(q, func() {
 		time.Sleep(2 * time.Second)
 	})

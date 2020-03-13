@@ -1,7 +1,6 @@
 package dispatch
 
 import (
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -9,48 +8,54 @@ import (
 
 const FOREVER time.Duration = 0
 
-enum BlockType {
-	Default,
-	Barrier,
-	Apply
-}
+type BlockType int
+
+const (
+	Default BlockType = 0
+	Barrier BlockType = 1
+	Apply   BlockType = 2
+)
 
 type Block struct {
-	f       func()
-	done    chan struct{}
-	type	BlockType
-	cancel	bool
+	f         func()
+	done      chan struct{}
+	blockType BlockType
+	cancel    bool
 }
 
-enum QueueType {
-	Async,
-	Serial
-}
+type QueueType int
+
+const (
+	Async  QueueType = 0
+	Serial QueueType = 1
+)
 
 type Queue struct {
-
+	blocks         chan *Block
+	chanLock       *sync.RWMutex
+	suspendCount   int64
+	runningCount   int64
+	suspended      chan struct{}
+	resumed        chan struct{}
+	barrierBlock   *Block
+	barrierPending chan struct{}
+	barrierDone    chan struct{}
+	queueType      QueueType
+	kvMap          *sync.Map
 }
 
-//type Queue interface {
-//	AsyncBlock(b *Block)
-//	Async(f func())
-//	SyncBlock(b *Block)
-//	Sync(f func())
-//	AfterBlock(d time.Duration, b *Block)
-//	After(d time.Duration, b *Block)
-//	Apply(f func(iter int))
-//	GetSpecific(key string) (interface{}, bool)
-//	SetSpecific(key string, value interface{})
-//}
-
 type Group struct {
-
+	empty        chan struct{}
+	count        int64
+	waitersMutex *sync.Mutex
+	waitersCond  *sync.Cond
 }
 
 func BlockCreate(t BlockType, f func()) *Block {
 	return &Block{
-		f: f,
-		type: t,
+		f:         f,
+		blockType: t,
+		done:      make(chan struct{}),
 	}
 }
 
@@ -70,39 +75,97 @@ func (b *Block) Perform() {
 }
 
 func (b *Block) Notify(q *Queue, f func()) {
-	b.Wait()
+	b.Wait(FOREVER)
 	q.Async(f)
 }
 
 func (b *Block) Wait(d time.Duration) bool {
-	if d != FOREVER {
-		switch {
+	if FOREVER != d {
+		select {
 		case <-b.done:
 			return true
 		case <-time.After(d):
 			return false
 		}
 	} else {
-		<-b.done:
+		<-b.done
 		return true
 	}
 }
 
-func (b *Block) Once(once * sync.Once) {
-	once.Do(b.Wait(FOREVER))
+func (b *Block) Once(once *sync.Once) {
+	once.Do(func() {
+		b.Perform()
+	})
 }
 
-//func QueueCreate(label string, type QueueType) *Queue {
-//	switch type {
-//	case Serial:
-//		return &SerialQueue{}
-//	case Async:
-//		return &AsyncQueue{}
-//	}
-//}
+func QueueCreate(qtype QueueType) *Queue {
+	q := &Queue{
+		blocks:         make(chan *Block, 100),
+		chanLock:       &sync.RWMutex{},
+		kvMap:          &sync.Map{},
+		queueType:      qtype,
+		barrierPending: make(chan struct{}, 1),
+		barrierDone:    make(chan struct{}),
+	}
 
-func QueueCreate(label string, type QueueType) *Queue {
-	return &Queue{}
+	go func() {
+		for {
+			select {
+			case <-q.suspended:
+				<-q.resumed
+			case <-q.barrierPending:
+				<-q.barrierDone
+			default:
+				q.chanLock.RLock()
+				b := <-q.blocks
+				q.chanLock.RUnlock()
+
+				if Barrier == b.blockType {
+					q.setPendingBarrier(b)
+				} else {
+					q.executeBlock(b)
+				}
+			}
+		}
+	}()
+
+	return q
+}
+
+func (q *Queue) setPendingBarrier(b *Block) {
+	q.barrierBlock = b
+	q.barrierPending <- struct{}{}
+}
+
+func (q *Queue) incrementRunningCount() {
+	atomic.AddInt64(&q.runningCount, 1)
+}
+
+func (q *Queue) decrementRunningCount() {
+	c := atomic.AddInt64(&q.runningCount, -1)
+	if 0 == c {
+		if q.barrierBlock != nil {
+			q.barrierBlock.Perform()
+			q.barrierBlock = nil
+			q.barrierDone <- struct{}{}
+		}
+	} else if 0 > c {
+		panic("decrementRunningCount called more than incrementRunningCount")
+	}
+}
+
+func (q *Queue) executeBlock(b *Block) {
+	q.incrementRunningCount()
+	if Async == q.queueType {
+		go func() {
+			b.Perform()
+			q.decrementRunningCount()
+		}()
+	} else {
+		b.Perform()
+		q.decrementRunningCount()
+	}
 }
 
 func (q *Queue) AsyncBlock(b *Block) {
@@ -127,8 +190,8 @@ func (q *Queue) AfterBlock(d time.Duration, b *Block) {
 	q.AsyncBlock(b)
 }
 
-func (q *Queue) After(d time.Duration, b *Block) {
-	return q.AfterBlock(d, BlockCreate(Default, f))
+func (q *Queue) After(d time.Duration, f func()) {
+	q.AfterBlock(d, BlockCreate(Default, f))
 }
 
 func (q *Queue) Apply(iterations int, f func(iter int)) {
@@ -137,20 +200,62 @@ func (q *Queue) Apply(iterations int, f func(iter int)) {
 		iterfunc := func() {
 			f(j)
 		}
-		q.Async(BlockCreate(Default, iterfunc)
+		q.AsyncBlock(BlockCreate(Default, iterfunc))
 	}
 }
 
 func (q *Queue) GetSpecific(key string) (interface{}, bool) {
-	return q.Map().Load(key)
+	return q.kvMap.Load(key)
 }
 
 func (q *Queue) SetSpecific(key string, value interface{}) {
-	q.Map().Store(key, value)
+	q.kvMap.Store(key, value)
+}
+
+func (q *Queue) Suspend() {
+	c := atomic.AddInt64(&q.suspendCount, 1)
+	if 1 == c {
+		q.suspended <- struct{}{}
+	}
+}
+
+func (q *Queue) Resume() {
+	c := atomic.AddInt64(&q.suspendCount, -1)
+	if 0 == c {
+		q.resumed <- struct{}{}
+	}
+
+	if 0 > c {
+		panic("Resume called more times than Suspend")
+	}
+}
+
+func (q *Queue) BarrierAsyncBlock(b *Block) {
+	b.blockType = Barrier
+	q.enqueue(b)
+}
+
+func (q *Queue) BarrierAsync(f func()) {
+	q.BarrierAsyncBlock(BlockCreate(Barrier, f))
+}
+
+func (q *Queue) BarrierSyncBlock(b *Block) {
+	b.blockType = Barrier
+	q.enqueue(b)
+	b.Wait(FOREVER)
+}
+
+func (q *Queue) BarrierSync(f func()) {
+	q.BarrierSyncBlock(BlockCreate(Barrier, f))
 }
 
 func GroupCreate() *Group {
-	return &Group{}
+	m := sync.Mutex{}
+	return &Group{
+		empty:        make(chan struct{}),
+		waitersMutex: &m,
+		waitersCond:  sync.NewCond(&m),
+	}
 }
 
 func (g *Group) AsyncBlock(q *Queue, b *Block) {
@@ -167,8 +272,10 @@ func (g *Group) Async(q *Queue, f func()) {
 }
 
 func (g *Group) NotifyBlock(q *Queue, b *Block) {
-	g.Wait(FOREVER)
-	q.AsyncBlock(b)
+	go func() {
+		g.Wait(FOREVER)
+		q.AsyncBlock(b)
+	}()
 }
 
 func (g *Group) Notify(q *Queue, f func()) {
@@ -176,38 +283,75 @@ func (g *Group) Notify(q *Queue, f func()) {
 }
 
 func (g *Group) Wait(d time.Duration) bool {
-	if FOREVER == d {
+	c := make(chan struct{})
+
+	go func() {
+		g.waitersCond.L.Lock()
+		if 0 != g.count {
+			g.waitersCond.Wait()
+		}
+		close(c)
+		g.waitersCond.L.Unlock()
+	}()
+
+	if FOREVER != d {
 		select {
 		case <-time.After(d):
 			return false
-		case <-g.empty:
+		case <-c:
 			return true
 		}
 	} else {
-		<-g.empty
+		<-c
 		return true
 	}
 }
 
 func (g *Group) Enter() {
-	atomic.AddInt64(g.count, 1)
+	// no need for lock in increment since it can't leave g.Wait() hanging forever...
+	atomic.AddInt64(&g.count, 1)
 }
 
 func (g *Group) Leave() {
-	count := atomic.AddInt64(g.count, -1)
+	g.waitersCond.L.Lock()
+	count := atomic.AddInt64(&g.count, -1)
 	if 0 > count {
-		panic("Leave was called more times than Enter"
+		panic("Leave was called more times than Enter")
 	}
 
 	if 0 == count {
-		for {
-			select {
-			case: g.empty <- struct{}
-			default:
-				return
-			}
-		}
+		g.waitersCond.Broadcast()
 	}
+	g.waitersCond.L.Unlock()
 }
 
+func (q *Queue) enqueue(b *Block) {
+	enqueued := false
 
+	q.chanLock.RLock()
+
+	select {
+	case q.blocks <- b:
+		enqueued = true
+	default:
+	}
+
+	q.chanLock.RUnlock()
+
+	if !enqueued {
+		q.chanLock.Lock()
+
+		select {
+		case q.blocks <- b:
+		default:
+			old := q.blocks
+			q.blocks = make(chan *Block, cap(old)*2)
+			for blk := range old {
+				q.blocks <- blk
+			}
+			q.blocks <- b
+		}
+
+		q.chanLock.Unlock()
+	}
+}
