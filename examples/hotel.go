@@ -1,42 +1,14 @@
-# Go-Dispatch
+package main
 
-A Go module that provides functionality similar to [Apple's dispatch API](https://developer.apple.com/documentation/dispatch?language=objc).
+import (
+        . "github.com/aixiansheng/go-dispatch"
+        . "fmt"
+        . "time"
+        . "net/http"
+	. "encoding/json"
+	. "context"
+)
 
-## Serializing tasks
-
-Serial queues can asynchronously execute tasks, one-at-a-time.  This can be useful for
-protect operations that are not safe for concurrent execution, such as appending to a
-list.
-
-```
-serial := QueueCreateSerial()
-
-var slice []int = make([]int)
-
-myAppend := func(x int) {
-	slice = append(slice, x)
-	fmt.Printf("%v...\n", slice)
-}
-
-for i := 0; i < 20; i++ {
-	num := i
-
-	// Submit the task to the serial queue and return immediately
-	// so that the next task can be queued
-	serial.Async(func() {
-		myAppend(num)
-	})
-}
-```
-
-## Waiting for a group of asynchronous tasks to complete
-
-Groups can be used to track the execution of groups of tasks and know when they are complete.
-Here's an example of a Hotel that opens for business and accepts guests for a period of time,
-stops accepting new guests at some point, and then closes when all of the guests have checked
-out.
-
-```
 type Guest struct {
         Name string
         LengthOfStay int
@@ -48,14 +20,14 @@ var hotelIsOpen * Group
 var hotelStaffOps * Queue
 
 func receiveGuest(w ResponseWriter, r *Request) {
-        var g Guest
-        if err := NewDecoder(r.Body).Decode(&g); err != nil {
-                panic(err)
-        } else {
-                receptionDesk.Async(func() {
-                        checkInGuest(&g)
-                })
-        }
+	var g Guest
+	if err := NewDecoder(r.Body).Decode(&g); err != nil {
+		panic(err)
+	} else {
+		receptionDesk.Async(func() {
+			checkInGuest(&g)
+		})
+	}
 }
 
 func checkInGuest(g * Guest) {
@@ -82,13 +54,13 @@ func acceptGuestsForTime(t int) {
         m.HandleFunc("/guest/new", receiveGuest)
         s := Server{ Addr: ":8000", Handler: m }
         go func() {
-                s.ListenAndServe()
-        }()
+		s.ListenAndServe()
+	}()
 
         hotelIsOpen.Async(hotelStaffOps, func() {
                 Sleep(Duration(t) * Second)
 
-                Println("Not receiving new guests anymore...")
+		Println("Not receiving new guests anymore...")
                 s.Shutdown(Background())
         })
 }
@@ -102,4 +74,4 @@ func main() {
 
         Println("We're closed because the day is over and there are no guests left.")
 }
-```
+
