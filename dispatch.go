@@ -50,7 +50,6 @@ type Queue struct {
 // tasks can be associated with a group.  Callers can wait for all tasks in a group to
 // complete, or may receive a notification.
 type Group struct {
-	empty        chan struct{}
 	count        int64
 	waitersMutex *sync.Mutex
 	waitersCond  *sync.Cond
@@ -143,7 +142,9 @@ func QueueCreate(limit int) *Queue {
 		barrierDone:             make(chan struct{}, 1),
 		pendingBarrier:		 make(chan *Block, 1),
 		reachedConcurrencyLimit: make(chan struct{}, 1),
-		underConcurrencyLimit:   make(chan struct{}),
+		underConcurrencyLimit:   make(chan struct{}, 1),
+		suspended:		 make(chan struct{}, 1),
+		resumed:		 make(chan struct{}, 1),
 	}
 
 	go func() {
@@ -197,6 +198,7 @@ func (q *Queue) decrementRunningCount() {
 		case barrier := <- q.pendingBarrier:
 			barrier.Perform()
 			q.barrierDone <- struct{}{}
+		default:
 		}
 	}
 
@@ -363,7 +365,6 @@ func (q *Queue) enqueue(b *Block) {
 func GroupCreate() *Group {
 	m := sync.Mutex{}
 	return &Group{
-		empty:        make(chan struct{}),
 		waitersMutex: &m,
 		waitersCond:  sync.NewCond(&m),
 	}

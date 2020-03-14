@@ -370,6 +370,8 @@ func TestBlockNotify(t *testing.T) {
 func TestSequentialBarriers(t *testing.T) {
 	var x int64
 	q := QueueCreateConcurrent()
+	g := GroupCreate()
+
 	q.Async(func() {
 		atomic.AddInt64(&x, 1)
 		<-time.After(500 * time.Millisecond)
@@ -384,16 +386,21 @@ func TestSequentialBarriers(t *testing.T) {
 	q.BarrierAsync(func() {
 		<-time.After(500 * time.Millisecond)
 		c := atomic.AddInt64(&x, 1)
-		if c != 3 {
+		if c != 2 {
 			t.Errorf("Barrier 2 in sequential barrier test didn't wait for first barrier")
 		}
 	})
+	g.Enter()
 	q.Async(func() {
 		c := atomic.AddInt64(&x, 1)
-		if c != 4 {
+		if c != 3 {
 			t.Errorf("Final async block didn't wait for prior barriers to finish executing")
 		}
+		g.Leave()
+
 	})
+
+	g.Wait(FOREVER)
 }
 
 func TestConcurrencyLimit(t *testing.T) {
