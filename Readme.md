@@ -9,7 +9,7 @@ operations to a serial queue that will ensure that only one append operation hap
 a time:
 
 ```
-serial := QueueCreate(Serial)
+serial := QueueCreateSerial()
 group := GroupCreate()
 
 var slice []int = make([]int, 0, 20)
@@ -34,12 +34,21 @@ for i := 0; i < 20; i++ {
 
 fmt.Printf("Doing other things...\n")
 
-conc := QueueCreate(Concurrent)
+conc := QueueCreateConcurrent()
 group.Async(conc, func() {
 	fmt.Printf("I think I'll sleep and hold up the group for funsies")
 	time.Sleep(1 * time.Second)
 })
 
 group.Wait(FOREVER)
+
+// Create a queue that limits concurrent task execution to 3
+c3 := QueueCreate(3)
+for i := 0; i < 10; i++ {
+	c3.Async(func() {
+		fmt.Println("Three-at-a-time")
+		<-time.After(1 * time.Second)
+	})
+}
 
 ```

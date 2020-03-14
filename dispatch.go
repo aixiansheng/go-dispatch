@@ -27,29 +27,23 @@ type Block struct {
 	cancel    bool
 }
 
-// Queue types
-type QueueType int
-
-const (
-	Concurrent QueueType = 0
-	Serial QueueType = 1
-)
-
 // Queue provides serial or concurrent execution for tasks.  Tasks can be scheduled
 // synchronously or asynchronously so that the caller can decide whether or not to
 // wait for the task to execute.
 type Queue struct {
-	blocks         chan *Block
-	chanLock       *sync.RWMutex
-	suspendCount   int64
-	runningCount   int64
-	suspended      chan struct{}
-	resumed        chan struct{}
-	barrierBlock   *Block
-	barrierPending chan struct{}
-	barrierDone    chan struct{}
-	queueType      QueueType
-	kvMap          *sync.Map
+	blocks                  chan *Block
+	chanLock                *sync.RWMutex
+	suspendCount            int64
+	runningCount            int64
+	suspended               chan struct{}
+	resumed                 chan struct{}
+	barrierBlock            *Block
+	barrierPending          chan struct{}
+	barrierDone             chan struct{}
+	reachedConcurrencyLimit chan struct{}
+	underConcurrencyLimit   chan struct{}
+	concurrencyLimit        int64
+	kvMap                   *sync.Map
 }
 
 // Group implements a way to aggregate sets of tasks and synchronize behaviors.  Multiple
@@ -128,15 +122,27 @@ func (b *Block) Once(once *sync.Once) {
 	})
 }
 
-// QueueCreate creates a queue of the specified type.
-func QueueCreate(qtype QueueType) *Queue {
+// QueueCreateSerial creates a serial queue (maximum concurrency of 1).
+func QueueCreateSerial() *Queue {
+	return QueueCreate(1)
+}
+
+// QueueCreateConcurrent creates a queue with unlimited concurrency.
+func QueueCreateConcurrent() *Queue {
+	return QueueCreate(0)
+}
+
+// QueueCreate creates a queue with the specified concurrency limit.
+func QueueCreate(limit int) *Queue {
 	q := &Queue{
-		blocks:         make(chan *Block, 100),
-		chanLock:       &sync.RWMutex{},
-		kvMap:          &sync.Map{},
-		queueType:      qtype,
-		barrierPending: make(chan struct{}, 1),
-		barrierDone:    make(chan struct{}),
+		blocks:                  make(chan *Block, 100),
+		chanLock:                &sync.RWMutex{},
+		kvMap:                   &sync.Map{},
+		concurrencyLimit:        int64(limit),
+		barrierPending:          make(chan struct{}, 1),
+		barrierDone:             make(chan struct{}),
+		reachedConcurrencyLimit: make(chan struct{}, 1),
+		underConcurrencyLimit:   make(chan struct{}),
 	}
 
 	go func() {
@@ -146,15 +152,22 @@ func QueueCreate(qtype QueueType) *Queue {
 				<-q.resumed
 			case <-q.barrierPending:
 				<-q.barrierDone
+			case <-q.reachedConcurrencyLimit:
+				<-q.underConcurrencyLimit
 			default:
-				q.chanLock.RLock()
-				b := <-q.blocks
-				q.chanLock.RUnlock()
-
-				if Barrier == b.blockType {
-					q.setPendingBarrier(b)
+				r := atomic.LoadInt64(&q.runningCount)
+				if r == q.concurrencyLimit && q.concurrencyLimit > 0 {
+					q.reachedConcurrencyLimit <- struct{}{}
 				} else {
-					q.executeBlock(b)
+					q.chanLock.RLock()
+					b := <-q.blocks
+					q.chanLock.RUnlock()
+
+					if Barrier == b.blockType {
+						q.setPendingBarrier(b)
+					} else {
+						q.executeBlock(b)
+					}
 				}
 			}
 		}
@@ -176,26 +189,30 @@ func (q *Queue) decrementRunningCount() {
 	c := atomic.AddInt64(&q.runningCount, -1)
 	if 0 == c {
 		if q.barrierBlock != nil {
+			// This doesn't create a TOCTOU race because barrierPending prevents
+			// the addition of new jobs, so runningCount can't increment
 			q.barrierBlock.Perform()
 			q.barrierBlock = nil
 			q.barrierDone <- struct{}{}
 		}
-	} else if 0 > c {
+	}
+
+	if q.concurrencyLimit > 0 && c == q.concurrencyLimit-1 {
+		// Barriers could be implemented with changes to the concurrencyLimit...
+		q.underConcurrencyLimit <- struct{}{}
+	}
+
+	if 0 > c {
 		panic("decrementRunningCount called more than incrementRunningCount")
 	}
 }
 
 func (q *Queue) executeBlock(b *Block) {
 	q.incrementRunningCount()
-	if Concurrent == q.queueType {
-		go func() {
-			b.Perform()
-			q.decrementRunningCount()
-		}()
-	} else {
+	go func() {
 		b.Perform()
 		q.decrementRunningCount()
-	}
+	}()
 }
 
 // AsyncBlock submits the block for execution and returns immediately.

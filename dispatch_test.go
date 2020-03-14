@@ -7,7 +7,7 @@ import (
 )
 
 func TestGroupEnterLeave(t *testing.T) {
-	q := QueueCreate(Concurrent)
+	q := QueueCreateConcurrent()
 	g := GroupCreate()
 	c := make(chan struct{})
 	entered := make(chan struct{})
@@ -37,22 +37,17 @@ func TestGroupEnterLeave(t *testing.T) {
 func TestWaitRace(t *testing.T) {
 	g := GroupCreate()
 	go func() {
-		for {
-			go func() {
-				g.Wait(FOREVER)
-			}()
-		}
+		g.Wait(FOREVER)
 	}()
-	time.Sleep(1) // a crude test
-	q := QueueCreate(Concurrent)
-	for i := 0; i < 50; i++ {
-		g.Async(q, func() {
-			time.Sleep(1)
-		})
-	}
 
-	g.Wait(3 * time.Second)
-	time.Sleep(3 * time.Second)
+	time.Sleep(1) // a crude test
+
+	q := QueueCreateConcurrent()
+	g.Async(q, func() {
+		time.Sleep(1)
+	})
+
+	g.Wait(2 * time.Second)
 }
 
 // Submit jobs that sleep for the specified duration until the returned channel is closed.
@@ -66,7 +61,7 @@ func submitAsyncJobsWithCounter(q *Queue, counter *int64, duration time.Duration
 			case <-c:
 				return
 			default:
-				time.Sleep(20 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				q.Async(func() {
 					atomic.AddInt64(counter, 1)
 					time.Sleep(duration)
@@ -83,8 +78,8 @@ func TestGroupNotify(t *testing.T) {
 	// This may be impossible to test without internal knowledge of the
 	// Group and Queues since the notify task is submitted when prior jobs
 	// have completed, but it may not run until later...
-	q1 := QueueCreate(Concurrent)
-	q2 := QueueCreate(Concurrent)
+	q1 := QueueCreateConcurrent()
+	q2 := QueueCreateConcurrent()
 	c1 := make(chan struct{})
 	c2 := make(chan struct{})
 	g := GroupCreate()
@@ -118,7 +113,7 @@ func TestGroupNotify(t *testing.T) {
 
 func TestAsyncBarrier(t *testing.T) {
 	var currently_running int64
-	q := QueueCreate(Concurrent)
+	q := QueueCreateConcurrent()
 	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
 
 	time.Sleep(200 * time.Millisecond)
@@ -145,7 +140,7 @@ func TestAsyncBarrier(t *testing.T) {
 
 func TestSyncBarrier(t *testing.T) {
 	var currently_running int64
-	q := QueueCreate(Concurrent)
+	q := QueueCreateConcurrent()
 	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
 
 	time.Sleep(200 * time.Millisecond)
@@ -170,7 +165,7 @@ func TestSyncBarrier(t *testing.T) {
 
 func TestNonBarrierSyncIsConcurrent(t *testing.T) {
 	var currently_running int64
-	q := QueueCreate(Concurrent)
+	q := QueueCreateConcurrent()
 	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
 
 	time.Sleep(200 * time.Millisecond)
@@ -194,7 +189,7 @@ func TestNonBarrierSyncIsConcurrent(t *testing.T) {
 }
 
 func TestSyncOnAsyncQueue(t *testing.T) {
-	q := QueueCreate(Concurrent)
+	q := QueueCreateConcurrent()
 
 	start := time.Now()
 
@@ -221,7 +216,7 @@ func TestSyncOnAsyncQueue(t *testing.T) {
 }
 
 func TestAsyncOnSerialQueue(t *testing.T) {
-	q := QueueCreate(Serial)
+	q := QueueCreateSerial()
 
 	start := time.Now()
 
@@ -249,7 +244,7 @@ func TestAsyncOnSerialQueue(t *testing.T) {
 }
 
 func TestAsyncOnAsyncQueue(t *testing.T) {
-	q := QueueCreate(Concurrent)
+	q := QueueCreateConcurrent()
 
 	start := time.Now()
 
@@ -266,7 +261,7 @@ func TestAsyncOnAsyncQueue(t *testing.T) {
 }
 
 func TestGroupWaitEarlyReturn(t *testing.T) {
-	q := QueueCreate(Concurrent)
+	q := QueueCreateConcurrent()
 	g := GroupCreate()
 
 	g.Async(q, func() {
@@ -280,20 +275,21 @@ func TestGroupWaitEarlyReturn(t *testing.T) {
 }
 
 func TestGroupWaitFull(t *testing.T) {
-	q := QueueCreate(Concurrent)
+
+	q := QueueCreateConcurrent()
 	g := GroupCreate()
 	g.Async(q, func() {
-		time.Sleep(2 * time.Second)
+		time.Sleep(1 * time.Second)
 	})
 
-	returned_in_time := g.Wait(2100 * time.Millisecond)
+	returned_in_time := g.Wait(2 * time.Second)
 	if !returned_in_time {
 		t.Errorf("Async Job never made Group.Wait finish")
 	}
 }
 
 func TestGroupWaitMultipleAsync(t *testing.T) {
-	q := QueueCreate(Concurrent)
+	q := QueueCreateConcurrent()
 	g := GroupCreate()
 	g.Async(q, func() {
 		time.Sleep(2 * time.Second)
@@ -312,7 +308,7 @@ func TestGroupWaitMultipleAsync(t *testing.T) {
 }
 
 func TestGroupWaitMultipleAsyncOnSyncQueue(t *testing.T) {
-	q := QueueCreate(Serial)
+	q := QueueCreateSerial()
 	g := GroupCreate()
 	g.Async(q, func() {
 		time.Sleep(2 * time.Second)
@@ -351,7 +347,7 @@ func TestBlockNotify(t *testing.T) {
 	var x uint64
 
 	c := make(chan struct{})
-	q := QueueCreate(Serial)
+	q := QueueCreateSerial()
 	q.Async(func() {
 		<-c
 		atomic.AddUint64(&x, 1)
@@ -361,7 +357,7 @@ func TestBlockNotify(t *testing.T) {
 	})
 	q.AsyncBlock(b)
 
-	q2 := QueueCreate(Concurrent)
+	q2 := QueueCreateConcurrent()
 	b.Notify(q2, func() {
 		if x != 2 {
 			t.Errorf("Previous 2 blocks didn't run before Block.Notify block ran")
@@ -372,29 +368,75 @@ func TestBlockNotify(t *testing.T) {
 }
 
 func TestSequentialBarriers(t *testing.T) {
-	var x uint64
-	q := QueueCreate(Concurrent)
+	var x int64
+	q := QueueCreateConcurrent()
 	q.Async(func() {
+		atomic.AddInt64(&x, 1)
 		<-time.After(500 * time.Millisecond)
-		atomic.AddUint64(&x, 1)
+		atomic.AddInt64(&x, -1)
 	})
 	q.BarrierAsync(func() {
-		c := atomic.AddUint64(&x, 1)
+		c := atomic.AddInt64(&x, 1)
 		if c != 1 {
 			t.Errorf("Barrier 1 failed to wait for prior block")
 		}
 	})
 	q.BarrierAsync(func() {
 		<-time.After(500 * time.Millisecond)
-		c := atomic.AddUint64(&x, 1)
+		c := atomic.AddInt64(&x, 1)
 		if c != 3 {
 			t.Errorf("Barrier 2 in sequential barrier test didn't wait for first barrier")
 		}
 	})
 	q.Async(func() {
-		c := atomic.AddUint64(&x, 1)
+		c := atomic.AddInt64(&x, 1)
 		if c != 4 {
 			t.Errorf("Final async block didn't wait for prior barriers to finish executing")
 		}
 	})
+}
+
+func TestConcurrencyLimit(t *testing.T) {
+	var concurrency int64
+	var runCount int64
+
+	q := QueueCreate(3)
+	end := make(chan struct{}, 10)
+	done := make(chan struct{})
+
+	for i := 0; i < 10; i++ {
+		q.Async(func() {
+			atomic.AddInt64(&runCount, 1)
+			atomic.AddInt64(&concurrency, 1)
+			<-time.After(1 * time.Second)
+			atomic.AddInt64(&concurrency, -1)
+			end <- struct{}{}
+		})
+	}
+
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				c := atomic.LoadInt64(&concurrency)
+				if c > 3 {
+					t.Errorf("Queue concurrency limit was not respected")
+				}
+
+				<-time.After(100 * time.Millisecond)
+			}
+		}
+	}()
+
+	for i := 0; i < 10; i++ {
+		<-end
+	}
+
+	close(done)
+
+	if runCount != 10 {
+		t.Errorf("Concurrency Test failed to run expected tasks")
+	}
 }
