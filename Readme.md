@@ -103,3 +103,48 @@ func main() {
         Println("We're closed because the day is over and there are no guests left.")
 }
 ```
+
+## Ensuring that a task happens in isolation
+
+Tasks can be submitted to queues as barriers so that all previously scheduled and executing tasks must
+complete before the barrier task executes and all subsequently scheduled tasks will wait for the barrier
+to finish before executing.
+
+This could be useful for performing operations in batches while asynchronously accepting new tasks:
+
+```
+var taskQueue * Queue
+var pressure int32
+var presssureLog []int32
+
+func relievePressure() {
+	Printf("Relieving pressure %v...\n", pressure)
+	presssureLog = append(presssureLog, pressure)
+	pressure = 0
+	Sleep(1 * Second)
+}
+
+func submitTask(taskPressure int32) {
+	taskQueue.Async(func() {
+		p := AddInt32(&pressure, taskPressure)
+		Printf("woah... %v\n", p)
+
+		if p > 50 {
+			taskQueue.BarrierAsync(relievePressure)
+		}
+	})
+}
+
+func main() {
+	taskQueue = QueueCreateConcurrent()
+	presssureLog = make([]int32, 0)
+
+	for i := 0; i < 20; i++ {
+		submitTask(Int31n(18))
+		Sleep(500 * Millisecond)
+	}
+
+	Println("Done running tasks and batch jobs: %v", presssureLog)
+}
+```
+

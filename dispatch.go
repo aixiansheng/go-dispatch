@@ -37,9 +37,9 @@ type Queue struct {
 	runningCount            int64
 	suspended               chan struct{}
 	resumed                 chan struct{}
-	barrierBlock            *Block
 	barrierPending          chan struct{}
 	barrierDone             chan struct{}
+	pendingBarrier		chan *Block
 	reachedConcurrencyLimit chan struct{}
 	underConcurrencyLimit   chan struct{}
 	concurrencyLimit        int64
@@ -140,7 +140,8 @@ func QueueCreate(limit int) *Queue {
 		kvMap:                   &sync.Map{},
 		concurrencyLimit:        int64(limit),
 		barrierPending:          make(chan struct{}, 1),
-		barrierDone:             make(chan struct{}),
+		barrierDone:             make(chan struct{}, 1),
+		pendingBarrier:		 make(chan *Block, 1),
 		reachedConcurrencyLimit: make(chan struct{}, 1),
 		underConcurrencyLimit:   make(chan struct{}),
 	}
@@ -177,8 +178,12 @@ func QueueCreate(limit int) *Queue {
 }
 
 func (q *Queue) setPendingBarrier(b *Block) {
-	q.barrierBlock = b
+	q.incrementRunningCount()
 	q.barrierPending <- struct{}{}
+	q.pendingBarrier <- b
+	go func() {
+		q.decrementRunningCount()
+	}()
 }
 
 func (q *Queue) incrementRunningCount() {
@@ -188,11 +193,9 @@ func (q *Queue) incrementRunningCount() {
 func (q *Queue) decrementRunningCount() {
 	c := atomic.AddInt64(&q.runningCount, -1)
 	if 0 == c {
-		if q.barrierBlock != nil {
-			// This doesn't create a TOCTOU race because barrierPending prevents
-			// the addition of new jobs, so runningCount can't increment
-			q.barrierBlock.Perform()
-			q.barrierBlock = nil
+		select {
+		case barrier := <- q.pendingBarrier:
+			barrier.Perform()
 			q.barrierDone <- struct{}{}
 		}
 	}
@@ -328,7 +331,6 @@ func (q *Queue) enqueue(b *Block) {
 	enqueued := false
 
 	q.chanLock.RLock()
-
 	select {
 	case q.blocks <- b:
 		enqueued = true
