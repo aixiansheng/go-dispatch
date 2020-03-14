@@ -7,7 +7,7 @@ import (
 )
 
 func TestGroupEnterLeave(t *testing.T) {
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 	g := GroupCreate()
 	c := make(chan struct{})
 	entered := make(chan struct{})
@@ -44,7 +44,7 @@ func TestWaitRace(t *testing.T) {
 		}
 	}()
 	time.Sleep(1) // a crude test
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 	for i := 0; i < 50; i++ {
 		g.Async(q, func() {
 			time.Sleep(1)
@@ -83,8 +83,8 @@ func TestGroupNotify(t *testing.T) {
 	// This may be impossible to test without internal knowledge of the
 	// Group and Queues since the notify task is submitted when prior jobs
 	// have completed, but it may not run until later...
-	q1 := QueueCreate(Async)
-	q2 := QueueCreate(Async)
+	q1 := QueueCreate(Concurrent)
+	q2 := QueueCreate(Concurrent)
 	c1 := make(chan struct{})
 	c2 := make(chan struct{})
 	g := GroupCreate()
@@ -118,7 +118,7 @@ func TestGroupNotify(t *testing.T) {
 
 func TestAsyncBarrier(t *testing.T) {
 	var currently_running int64
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
 
 	time.Sleep(200 * time.Millisecond)
@@ -145,7 +145,7 @@ func TestAsyncBarrier(t *testing.T) {
 
 func TestSyncBarrier(t *testing.T) {
 	var currently_running int64
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
 
 	time.Sleep(200 * time.Millisecond)
@@ -170,7 +170,7 @@ func TestSyncBarrier(t *testing.T) {
 
 func TestNonBarrierSyncIsConcurrent(t *testing.T) {
 	var currently_running int64
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 	c := submitAsyncJobsWithCounter(q, &currently_running, 800*time.Millisecond)
 
 	time.Sleep(200 * time.Millisecond)
@@ -194,7 +194,7 @@ func TestNonBarrierSyncIsConcurrent(t *testing.T) {
 }
 
 func TestSyncOnAsyncQueue(t *testing.T) {
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 
 	start := time.Now()
 
@@ -249,7 +249,7 @@ func TestAsyncOnSerialQueue(t *testing.T) {
 }
 
 func TestAsyncOnAsyncQueue(t *testing.T) {
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 
 	start := time.Now()
 
@@ -266,7 +266,7 @@ func TestAsyncOnAsyncQueue(t *testing.T) {
 }
 
 func TestGroupWaitEarlyReturn(t *testing.T) {
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 	g := GroupCreate()
 
 	g.Async(q, func() {
@@ -280,7 +280,7 @@ func TestGroupWaitEarlyReturn(t *testing.T) {
 }
 
 func TestGroupWaitFull(t *testing.T) {
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 	g := GroupCreate()
 	g.Async(q, func() {
 		time.Sleep(2 * time.Second)
@@ -293,7 +293,7 @@ func TestGroupWaitFull(t *testing.T) {
 }
 
 func TestGroupWaitMultipleAsync(t *testing.T) {
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 	g := GroupCreate()
 	g.Async(q, func() {
 		time.Sleep(2 * time.Second)
@@ -361,7 +361,7 @@ func TestBlockNotify(t *testing.T) {
 	})
 	q.AsyncBlock(b)
 
-	q2 := QueueCreate(Async)
+	q2 := QueueCreate(Concurrent)
 	b.Notify(q2, func() {
 		if x != 2 {
 			t.Errorf("Previous 2 blocks didn't run before Block.Notify block ran")
@@ -373,7 +373,7 @@ func TestBlockNotify(t *testing.T) {
 
 func TestSequentialBarriers(t *testing.T) {
 	var x uint64
-	q := QueueCreate(Async)
+	q := QueueCreate(Concurrent)
 	q.Async(func() {
 		<-time.After(500 * time.Millisecond)
 		atomic.AddUint64(&x, 1)

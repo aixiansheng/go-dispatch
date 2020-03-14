@@ -31,7 +31,7 @@ type Block struct {
 type QueueType int
 
 const (
-	Async  QueueType = 0
+	Concurrent QueueType = 0
 	Serial QueueType = 1
 )
 
@@ -187,7 +187,7 @@ func (q *Queue) decrementRunningCount() {
 
 func (q *Queue) executeBlock(b *Block) {
 	q.incrementRunningCount()
-	if Async == q.queueType {
+	if Concurrent == q.queueType {
 		go func() {
 			b.Perform()
 			q.decrementRunningCount()
