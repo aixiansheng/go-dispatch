@@ -2,7 +2,6 @@
 
 A Go module that provides functionality similar to [Apple's dispatch API](https://developer.apple.com/documentation/dispatch?language=objc).
 
-
 ## For Example
 
 Appending to a slice isn't safe without locks, so you can asynchronously submit append
@@ -10,8 +9,8 @@ operations to a serial queue that will ensure that only one append operation hap
 a time:
 
 ```
-serial := SerialQueue()
-group := NewGroup()
+serial := QueueCreate(Serial)
+group := GroupCreate()
 
 var slice []int = make([]int, 0, 20)
 
@@ -35,7 +34,7 @@ for i := 0; i < 20; i++ {
 
 fmt.Printf("Doing other things...\n")
 
-async := AsyncQueue()
+async := QueueCreate(Async)
 group.Async(async, func() {
 	fmt.Printf("I think I'll sleep and hold up the group for funsies")
 	time.Sleep(1 * time.Second)
@@ -43,5 +42,4 @@ group.Async(async, func() {
 
 group.Wait(FOREVER)
 
-fmt.Printf("done.\n")
 ```
