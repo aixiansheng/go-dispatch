@@ -34,20 +34,29 @@ func TestGroupEnterLeave(t *testing.T) {
 	}
 }
 
-func TestWaitRace(t *testing.T) {
+// Test that Wait on an empty group passes.
+func TestGroupWaitEmpty(t *testing.T) {
 	g := GroupCreate()
-	go func() {
-		g.Wait(FOREVER)
-	}()
 
-	time.Sleep(1) // a crude test
+	group_was_empty := g.Wait(FOREVER)
+	if !group_was_empty {
+		t.Errorf("Group should have been empty")
+	}
+}
 
+func TestWaitBeforeAndAfterAsync(t *testing.T) {
 	q := QueueCreateConcurrent()
+	g := GroupCreate()
+	g.Wait(FOREVER) // should return immediately
+
 	g.Async(q, func() {
 		time.Sleep(1)
 	})
 
-	g.Wait(2 * time.Second)
+	completed := g.Wait(FOREVER)
+	if !completed {
+		t.Errorf("Wait before job submission followed by wait after job submission didn't work correctly")
+	}
 }
 
 // Submit jobs that sleep for the specified duration until the returned channel is closed.
