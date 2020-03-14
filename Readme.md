@@ -34,8 +34,8 @@ for i := 0; i < 20; i++ {
 
 fmt.Printf("Doing other things...\n")
 
-async := QueueCreate(Async)
-group.Async(async, func() {
+conc := QueueCreate(Concurrent)
+group.Async(conc, func() {
 	fmt.Printf("I think I'll sleep and hold up the group for funsies")
 	time.Sleep(1 * time.Second)
 })
