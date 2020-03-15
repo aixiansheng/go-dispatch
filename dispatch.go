@@ -164,7 +164,6 @@ func (sem * Semaphore) Wait(d time.Duration) bool {
 			case <-waited:
 				return true
 			case <-time.After(d):
-				close(waited)
 				return true
 			}
 		}
