@@ -27,6 +27,14 @@ type Block struct {
 	cancel    bool
 }
 
+// Semaphore provides a way for a user to protect access to a finite resource with
+// calls to Wait and Signal.
+type Semaphore struct {
+	count int64
+	lock sync.Mutex
+	cond * sync.Cond
+}
+
 // Queue provides serial or concurrent execution for tasks.  Tasks can be scheduled
 // synchronously or asynchronously so that the caller can decide whether or not to
 // wait for the task to execute.
@@ -119,6 +127,61 @@ func (b *Block) Once(once *sync.Once) {
 	once.Do(func() {
 		b.Perform()
 	})
+}
+
+// SemaphoreCreate creates a semaphore with the specified count.  After initialization,
+// the semaphore will be in a state as if Signal was called count times, allowing Wait
+// to be called that many times before blocking and awaiting another call to Signal.
+// Callers of Wait are unblocked in FIFO-ish order as the Signal count permits.
+func SemaphoreCreate(count int) *Semaphore {
+	s := &Semaphore{
+		count: int64(count),
+	}
+	s.cond = sync.NewCond(&s.lock)
+	return s
+}
+
+
+// Wait will await a signal from the semaphore, or, if there was already a pending
+// signal, immediately return.  Returns false if it times out.
+func (sem * Semaphore) Wait(d time.Duration) bool {
+	sem.cond.L.Lock()
+	sem.count--
+
+	if 0 > sem.count {
+		waited := make(chan struct{})
+		go func() {
+			sem.cond.Wait()
+			sem.cond.L.Unlock()
+			close(waited)
+		}()
+
+		if FOREVER == d {
+			<-waited
+			return true
+		} else {
+			select {
+			case <-waited:
+				return true
+			case <-time.After(d):
+				close(waited)
+				return true
+			}
+		}
+	} else {
+		sem.cond.L.Unlock()
+		return true
+	}
+}
+
+// Signal allows the semaphore to release its oldest Wait caller.
+func (sem * Semaphore) Signal() {
+	sem.cond.L.Lock()
+	sem.count++
+	if 0 >= sem.count {
+		sem.cond.Signal()
+	}
+	sem.cond.L.Unlock()
 }
 
 // QueueCreateSerial creates a serial queue (maximum concurrency of 1).

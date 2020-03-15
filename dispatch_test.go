@@ -6,6 +6,107 @@ import (
 	"time"
 )
 
+func TestSemaphoreSignalDoesntBlock(t *testing.T) {
+	s := SemaphoreCreate(0)
+	q := QueueCreateConcurrent()
+	c := make(chan int, 5)
+	var writes uint64
+
+	for i := 0; i < 5; i++ {
+		q.Async(func() {
+			s.Signal()
+			c <- 1
+			n := atomic.AddUint64(&writes, 1)
+			if n == 5 {
+				close(c)
+			}
+		})
+	}
+
+	total := 0
+	for i := range c {
+		total += i
+	}
+
+	if total != 5 {
+		t.Errorf("Received %v of 5 items, indicating that some Signal calls are blocking", total)
+	}
+
+	x := s.Wait(FOREVER)
+	if !x {
+		t.Errorf("Wait should have returned true, immediately")
+	}
+}
+
+func TestSemaphoreCounted(t *testing.T) {
+	s := SemaphoreCreate(5)
+	q := QueueCreateConcurrent()
+	c := make(chan int, 5)
+
+	for i := 0; i < 10; i++ {
+		j := i
+		q.Async(func() {
+			s.Wait(FOREVER)
+			c <- j
+		})
+	}
+
+	select {
+	case <- c:
+		t.Errorf("Wait should have prevented any writes to the channel")
+	default:
+	}
+
+	for i := 0; i < 5; i++ {
+		s.Signal()
+		<-c
+	}
+
+	select {
+	case <-c:
+		t.Errorf("Wait should have prevented any more writes to the channel")
+	default:
+	}
+}
+
+func TestSemaphoreWaitFirst(t *testing.T) {
+	s := SemaphoreCreate(0)
+	q := QueueCreateConcurrent()
+	c := make(chan struct{}, 1)
+
+	go func() {
+		c <- struct{}{}
+		x := s.Wait(FOREVER)
+		if !x {
+			t.Errorf("Semaphore Wait before Signal() should have returned true, immediately")
+		}
+	}()
+
+	q.Async(func() {
+		<-c
+		time.Sleep(1 * time.Second)
+		s.Signal()
+	})
+
+}
+
+func TestSemaphoreSignalFirst(t *testing.T) {
+	s := SemaphoreCreate(0)
+	q := QueueCreateConcurrent()
+
+	signaled := make(chan struct{}, 1)
+	q.Async(func() {
+		s.Signal()
+		signaled <- struct{}{}
+	})
+
+	<-signaled
+	x := s.Wait(FOREVER)
+	if !x {
+		t.Errorf("Semaphore Wait after Signal() should have returned true, immediately")
+	}
+}
+
 func TestGroupEnterLeave(t *testing.T) {
 	q := QueueCreateConcurrent()
 	g := GroupCreate()
