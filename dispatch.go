@@ -15,7 +15,6 @@ type BlockType int
 const (
 	Default BlockType = 0
 	Barrier BlockType = 1
-	Apply   BlockType = 2
 )
 
 // Block implements an execution unit for tasks so that a user can
@@ -31,8 +30,8 @@ type Block struct {
 // calls to Wait and Signal.
 type Semaphore struct {
 	count int64
-	lock sync.Mutex
-	cond * sync.Cond
+	lock  sync.Mutex
+	cond  *sync.Cond
 }
 
 // Queue provides serial or concurrent execution for tasks.  Tasks can be scheduled
@@ -47,7 +46,7 @@ type Queue struct {
 	resumed                 chan struct{}
 	barrierPending          chan struct{}
 	barrierDone             chan struct{}
-	pendingBarrier		chan *Block
+	pendingBarrier          chan *Block
 	reachedConcurrencyLimit chan struct{}
 	underConcurrencyLimit   chan struct{}
 	concurrencyLimit        int64
@@ -141,10 +140,9 @@ func SemaphoreCreate(count int) *Semaphore {
 	return s
 }
 
-
 // Wait will await a signal from the semaphore, or, if there was already a pending
 // signal, immediately return.  Returns false if it times out.
-func (sem * Semaphore) Wait(d time.Duration) bool {
+func (sem *Semaphore) Wait(d time.Duration) bool {
 	sem.cond.L.Lock()
 	sem.count--
 
@@ -174,7 +172,7 @@ func (sem * Semaphore) Wait(d time.Duration) bool {
 }
 
 // Signal allows the semaphore to release its oldest Wait caller.
-func (sem * Semaphore) Signal() {
+func (sem *Semaphore) Signal() {
 	sem.cond.L.Lock()
 	sem.count++
 	if 0 >= sem.count {
@@ -202,11 +200,11 @@ func QueueCreate(limit int) *Queue {
 		concurrencyLimit:        int64(limit),
 		barrierPending:          make(chan struct{}, 1),
 		barrierDone:             make(chan struct{}, 1),
-		pendingBarrier:		 make(chan *Block, 1),
+		pendingBarrier:          make(chan *Block, 1),
 		reachedConcurrencyLimit: make(chan struct{}, 1),
 		underConcurrencyLimit:   make(chan struct{}, 1),
-		suspended:		 make(chan struct{}, 1),
-		resumed:		 make(chan struct{}, 1),
+		suspended:               make(chan struct{}, 1),
+		resumed:                 make(chan struct{}, 1),
 	}
 
 	go func() {
@@ -257,7 +255,7 @@ func (q *Queue) decrementRunningCount() {
 	c := atomic.AddInt64(&q.runningCount, -1)
 	if 0 == c {
 		select {
-		case barrier := <- q.pendingBarrier:
+		case barrier := <-q.pendingBarrier:
 			barrier.Perform()
 			q.barrierDone <- struct{}{}
 		default:
@@ -324,7 +322,7 @@ func (q *Queue) Apply(iterations int, f func(iter int)) {
 		j := i
 		iterfunc := func() {
 			f(j)
-			c<-struct{}{}
+			c <- struct{}{}
 		}
 		q.AsyncBlock(BlockCreate(Default, iterfunc))
 	}

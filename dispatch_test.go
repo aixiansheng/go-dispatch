@@ -30,7 +30,7 @@ func TestApply(t *testing.T) {
 		atomic.AddUint64(&x, uint64(iter))
 	})
 
-	if x != 0 + 1 + 2 + 3 + 4 {
+	if x != 0+1+2+3+4 {
 		t.Errorf("Apply didn't complete or didn't call all iterations starting at zero")
 	}
 }
@@ -41,13 +41,13 @@ func TestQueueAfter(t *testing.T) {
 	c := make(chan struct{})
 	s := time.Now()
 
-	q.After(1 * time.Second, func() {
+	q.After(1*time.Second, func() {
 		x++
 		close(c)
 	})
 
 	if x == 1 {
-		if time.Since(s) > 1 * time.Second {
+		if time.Since(s) > 1*time.Second {
 			t.Errorf("After took too long to return")
 		} else {
 			t.Errorf("After may not have waited long enough")
@@ -57,7 +57,7 @@ func TestQueueAfter(t *testing.T) {
 	<-c
 
 	if x == 1 {
-		if time.Since(s) < 1 * time.Second {
+		if time.Since(s) < 1*time.Second {
 			t.Errorf("After didn't wait long enough")
 		}
 	}
@@ -132,7 +132,7 @@ func TestSemaphoreCounted(t *testing.T) {
 	}
 
 	select {
-	case <- c:
+	case <-c:
 		t.Errorf("Wait should have prevented any writes to the channel")
 	default:
 	}
