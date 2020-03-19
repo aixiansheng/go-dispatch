@@ -316,15 +316,21 @@ func (q *Queue) After(d time.Duration, f func()) {
 	q.AfterBlock(d, BlockCreate(Default, f))
 }
 
-// Apply submits a task to the specified queue and causes it to e executed the specified number
-// of times, with each execution receiving its iteration index as a parameter.
+// Apply submits a task to the specified queue, waiting for it to be executed the specified number
+// of times, with each execution receiving its iteration index as a parameter (starting at 0).
 func (q *Queue) Apply(iterations int, f func(iter int)) {
+	c := make(chan struct{}, iterations)
 	for i := 0; i < iterations; i++ {
 		j := i
 		iterfunc := func() {
 			f(j)
+			c<-struct{}{}
 		}
 		q.AsyncBlock(BlockCreate(Default, iterfunc))
+	}
+
+	for i := 0; i < iterations; i++ {
+		<-c
 	}
 }
 

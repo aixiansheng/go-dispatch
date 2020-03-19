@@ -6,6 +6,86 @@ import (
 	"time"
 )
 
+func TestGetSetSpecific(t *testing.T) {
+	q := QueueCreateConcurrent()
+	q.Sync(func() {
+		q.SetSpecific("foo", "bar")
+	})
+	q.Sync(func() {
+		bar, found := q.GetSpecific("foo")
+		if !found {
+			t.Errorf("Set/GetSpecific failed, key wasn't found")
+		}
+		if bar.(string) != "bar" {
+			t.Errorf("Set/GetSpecific failed, value didn't match expected")
+		}
+	})
+}
+
+func TestApply(t *testing.T) {
+	q := QueueCreateConcurrent()
+	var x uint64
+
+	q.Apply(5, func(iter int) {
+		atomic.AddUint64(&x, uint64(iter))
+	})
+
+	if x != 0 + 1 + 2 + 3 + 4 {
+		t.Errorf("Apply didn't complete or didn't call all iterations starting at zero")
+	}
+}
+
+func TestQueueAfter(t *testing.T) {
+	q := QueueCreateConcurrent()
+	x := 0
+	c := make(chan struct{})
+	s := time.Now()
+
+	q.After(1 * time.Second, func() {
+		x++
+		close(c)
+	})
+
+	if x == 1 {
+		if time.Since(s) > 1 * time.Second {
+			t.Errorf("After took too long to return")
+		} else {
+			t.Errorf("After may not have waited long enough")
+		}
+	}
+
+	<-c
+
+	if x == 1 {
+		if time.Since(s) < 1 * time.Second {
+			t.Errorf("After didn't wait long enough")
+		}
+	}
+}
+
+func TestSuspendResumeQueue(t *testing.T) {
+	q := QueueCreateSerial()
+	x := 0
+
+	q.Suspend()
+	q.Async(func() {
+		x++
+	})
+
+	if x == 1 {
+		t.Errorf("Suspend didn't stop the queue")
+	}
+
+	q.Resume()
+	q.Sync(func() {
+		x++
+	})
+
+	if x != 2 {
+		t.Errorf("Resume didn't resume execution")
+	}
+}
+
 func TestSemaphoreSignalDoesntBlock(t *testing.T) {
 	s := SemaphoreCreate(0)
 	q := QueueCreateConcurrent()
