@@ -371,12 +371,32 @@ func (q *Queue) Apply(iterations int, f func(iter int)) {
 			f(j)
 			c <- struct{}{}
 		}
-		q.asyncBlock(BlockCreate(iterfunc))
+		q.Async(iterfunc)
 	}
 
 	for i := 0; i < iterations; i++ {
 		<-c
 	}
+
+	close(c)
+}
+
+// ApplyChan reads items from the specified chan and asynchronously submits a task to the
+// queue for each item read, until the chan is closed.  It returns when all submitted tasks
+// are complete.
+func (q *Queue) ApplyChan(items <-chan interface{}, f func(item interface{})) {
+	wg := &sync.WaitGroup{}
+	for item := range items {
+		wg.Add(1)
+		i := item
+		iterfunc := func() {
+			f(i)
+			wg.Done()
+		}
+		q.Async(iterfunc)
+	}
+
+	wg.Wait()
 }
 
 // GetSpecific gets a value from the queue's key-value store.

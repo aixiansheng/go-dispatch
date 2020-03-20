@@ -6,6 +6,29 @@ import (
 	"time"
 )
 
+func TestApplyChan(t *testing.T) {
+	c := make(chan interface{}, 20)
+	q := QueueCreate(10)
+	var x uint64
+	total := 0
+
+	for i := 0; i < 20; i++ {
+		j := i
+		total += j
+		c <- j
+	}
+
+	close(c)
+
+	q.ApplyChan(c, func(i interface{}) {
+		atomic.AddUint64(&x, uint64(i.(int)))
+	})
+
+	if int(x) != total {
+		t.Errorf("ApplyChan didn't execute the expected number of times %v/%v", x, total)
+	}
+}
+
 func TestBlockNotifyOrder(t *testing.T) {
 	x := 0
 	c := make(chan struct{})
