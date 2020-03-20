@@ -2,6 +2,18 @@
 
 A Go module that provides functionality similar to [Apple's dispatch API](https://developer.apple.com/documentation/dispatch?language=objc).
 
+## Data Types and Capabilities
+
+- Blocks:  Execution units that cab be executed with or without submission to a Queue.  Users can
+  wait for a block to finish executing or receive notification asynchronously.
+- Queues:  Serial and concurrent Queues allow users to submit Blocks for execution and either wait
+  until they complete or return, allowing them to complete asynchronously.
+- Groups:  Groups track the execution of a collection of Blocks, allowing a user to wait for them
+  to complete, or asynchronously receive notification.
+- Semaphores:  Counting semaphores allow the user to block execution of goroutines until a signal
+  is sent in another goroutine.  This can be useful to wait on a single task to complete, or it
+  can be used to manage access to a finite number of resources.
+
 ## Serializing tasks
 
 Serial queues can asynchronously execute tasks, one-at-a-time.  This can be useful for
