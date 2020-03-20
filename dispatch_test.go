@@ -6,6 +6,32 @@ import (
 	"time"
 )
 
+func TestBlockNotifyCancel(t *testing.T) {
+	x := 0
+	q := QueueCreateConcurrent()
+	b := BlockCreate(Default, func() {
+		x++
+	})
+
+	c := make(chan struct{})
+	b.Notify(q, func() {
+		close(c)
+	})
+
+	b.Cancel()
+	b.Perform()
+
+	if x != 0 {
+		t.Errorf("Cancel didn't prevent block execution")
+	}
+
+	select {
+	case <-c:
+		t.Errorf("Cancelling the block that would trigger a notification released the notification!")
+	case <-time.After(1 * time.Second):
+	}
+}
+
 func TestBlockPerformMultiple(t *testing.T) {
 	b := BlockCreate(Default, func() {
 		x := 1
