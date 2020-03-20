@@ -36,6 +36,7 @@ myAppend := func(x int) {
 	fmt.Printf("%v...\n", slice)
 }
 
+// Manually submit tasks for asynchronous completion.
 for i := 0; i < 20; i++ {
 	num := i
 
@@ -45,6 +46,12 @@ for i := 0; i < 20; i++ {
 		myAppend(num)
 	})
 }
+
+// Or use Apply, which will return when complete.
+serial.Apply(20, func(i int) {
+	myAppend(i)
+})
+
 ```
 
 ## Waiting for a group of asynchronous tasks to complete
