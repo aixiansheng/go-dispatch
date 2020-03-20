@@ -4,15 +4,21 @@ A Go module that provides functionality similar to [Apple's dispatch API](https:
 
 ## Data Types and Capabilities
 
-- Blocks:  Execution units that cab be executed with or without submission to a Queue.  Users can
-  wait for a block to finish executing or receive notification asynchronously.
-- Queues:  Serial and concurrent Queues allow users to submit Blocks for execution and either wait
-  until they complete or return, allowing them to complete asynchronously.
-- Groups:  Groups track the execution of a collection of Blocks, allowing a user to wait for them
-  to complete, or asynchronously receive notification.
-- Semaphores:  Counting semaphores allow the user to block execution of goroutines until a signal
-  is sent in another goroutine.  This can be useful to wait on a single task to complete, or it
-  can be used to manage access to a finite number of resources.
+- **Blocks**:  Execution units that can be submitted to a Queue or executed themselves.  Users can
+  wait for blocks to finish executing or receive notification asynchronously.  Blocks can also be
+  created to act as barriers on queues, forcing all previously submitted blocks to finish before
+  they are executed, and stalling the execution of all subsequently submitted blocks until they are
+  finished.
+- **Queues**:  Serial and concurrent queues allow users to submit blocks for execution and either wait
+  until complete or return immediately, allowing them to complete asynchronously.  Serial queues can
+  be used to serialize access to a sensitive resource, while concurrent queues can be used to execute
+  multiple tasks at one time in either a bounded or unbounded way.  Queues may also be suspended and
+  resumed.
+- **Groups**:  Groups track the execution of a collection of blocks, allowing a user to wait for them
+  to complete or asynchronously receive notification.
+- **Semaphores**:  Counting semaphores allow the user to block execution of goroutines until signals
+  ar sent from another goroutine.  This can be used to block until a single tasks completes, or it
+  to manage access to a finite number of resources.
 
 ## Serializing tasks
 
