@@ -95,11 +95,10 @@ func (b *Block) Perform() {
 		} else {
 			b.f()
 		}
+		b.closeOnce.Do(func() {
+			close(b.done)
+		})
 	}
-
-	b.closeOnce.Do(func() {
-		close(b.done)
-	})
 }
 
 // NotifyBlock causes the notification block to be submitted to the specified queue when the receiver
