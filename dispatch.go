@@ -15,15 +15,18 @@ type BlockType int
 const (
 	Default BlockType = 0
 	Barrier BlockType = 1
+	Once    BlockType = 2
 )
 
 // Block implements an execution unit for tasks so that a user can
 // wait for them to complete or cancel them.
 type Block struct {
-	f         func()
-	done      chan struct{}
-	blockType BlockType
-	cancel    bool
+	f           func()
+	done        chan struct{}
+	blockType   BlockType
+	cancel      bool
+	performOnce *sync.Once
+	closeOnce   *sync.Once
 }
 
 // Semaphore provides a way for a user to protect access to a finite resource with
@@ -65,9 +68,11 @@ type Group struct {
 // BlockCreate creates a block of the specified type
 func BlockCreate(t BlockType, f func()) *Block {
 	return &Block{
-		f:         f,
-		blockType: t,
-		done:      make(chan struct{}),
+		f:           f,
+		blockType:   t,
+		done:        make(chan struct{}),
+		performOnce: &sync.Once{},
+		closeOnce:   &sync.Once{},
 	}
 }
 
@@ -85,13 +90,20 @@ func (b *Block) TestCancel() bool {
 // Perform causes the block to execute and waits for it to finish.
 func (b *Block) Perform() {
 	if !b.cancel {
-		b.f()
+		if Once == b.blockType {
+			b.performOnce.Do(b.f)
+		} else {
+			b.f()
+		}
 	}
-	close(b.done)
+
+	b.closeOnce.Do(func() {
+		close(b.done)
+	})
 }
 
 // NotifyBlock causes the notification block to be submitted to the specified queue when the receiver
-// finishes executing.
+// finishes executing.  Only a block's first execution may be Waited upon or trigger Notify callbacks.
 func (b *Block) NotifyBlock(q *Queue, n *Block) {
 	go func() {
 		b.Wait(FOREVER)
@@ -122,10 +134,11 @@ func (b *Block) Wait(d time.Duration) bool {
 }
 
 // Once causes the block to be executed only once, no matter how many times it's called.
-func (b *Block) Once(once *sync.Once) {
-	once.Do(func() {
-		b.Perform()
-	})
+func (b *Block) Once() {
+	if Once != b.blockType {
+		b.blockType = Once
+	}
+	b.Perform()
 }
 
 // SemaphoreCreate creates a semaphore with the specified count.  After initialization,

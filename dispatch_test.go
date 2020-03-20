@@ -6,6 +6,36 @@ import (
 	"time"
 )
 
+func TestBlockPerformMultiple(t *testing.T) {
+	b := BlockCreate(Default, func() {
+		x := 1
+		x++
+	})
+
+	b.Perform()
+	b.Perform()
+}
+
+func TestOnce(t *testing.T) {
+	x := 0
+	b := BlockCreate(Default, func() {
+		x++
+	})
+
+	b2 := BlockCreate(Once, func() {
+		x++
+	})
+
+	for i := 0; i < 10; i++ {
+		b.Once()
+		b2.Perform()
+	}
+
+	if x != 2 {
+		t.Errorf("Once didn't work")
+	}
+}
+
 func TestGetSetSpecific(t *testing.T) {
 	q := QueueCreateConcurrent()
 	q.Sync(func() {
