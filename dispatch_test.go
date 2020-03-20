@@ -6,6 +6,54 @@ import (
 	"time"
 )
 
+func TestBlockNotifyOrder(t *testing.T) {
+	x := 0
+	c := make(chan struct{})
+	b := BlockCreate(Default, func() {
+		x++
+		<-c
+	})
+
+	q := QueueCreateConcurrent()
+
+	c2 := make(chan struct{})
+	b.Notify(q, func() {
+		if x != 1 {
+			t.Errorf("Notify ran before the intended block completed")
+		}
+		x++
+		close(c2)
+	})
+
+	q.AsyncBlock(b)
+
+	close(c)
+	<-c2
+	
+	if x != 2 {
+		t.Errorf("Neither the intended block, nor its completion notification executed")
+	}
+}
+
+func TestBlockWait(t *testing.T) {
+	c := make(chan struct{})
+	b := BlockCreate(Default, func() {
+		<-c
+	})
+
+	q := QueueCreateConcurrent()
+	q.AsyncBlock(b)
+	q.Async(func() {
+		time.Sleep(1 * time.Second)
+		close(c)
+	})
+
+	b.Wait(FOREVER)
+	if _, ok := <-c; ok == true {
+		t.Errorf("Wait may have returned too soon")
+	}
+}
+
 func TestBlockNotifyCancel(t *testing.T) {
 	x := 0
 	q := QueueCreateConcurrent()
