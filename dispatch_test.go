@@ -25,11 +25,11 @@ func TestBlockNotifyOrder(t *testing.T) {
 		close(c2)
 	})
 
-	q.AsyncBlock(b)
+	q.Async(b)
 
 	close(c)
 	<-c2
-	
+
 	if x != 2 {
 		t.Errorf("Neither the intended block, nor its completion notification executed")
 	}
@@ -42,7 +42,7 @@ func TestBlockWait(t *testing.T) {
 	})
 
 	q := QueueCreateConcurrent()
-	q.AsyncBlock(b)
+	q.Async(b)
 	q.Async(func() {
 		time.Sleep(1 * time.Second)
 		close(c)
@@ -649,7 +649,7 @@ func TestBlockNotify(t *testing.T) {
 	b := BlockCreate(Default, func() {
 		atomic.AddUint64(&x, 1)
 	})
-	q.AsyncBlock(b)
+	q.Async(b)
 
 	q2 := QueueCreateConcurrent()
 	b.Notify(q2, func() {

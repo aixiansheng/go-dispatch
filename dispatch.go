@@ -101,19 +101,33 @@ func (b *Block) Perform() {
 	}
 }
 
-// NotifyBlock causes the notification block to be submitted to the specified queue when the receiver
+// notifyBlock causes the notification block to be submitted to the specified queue when the receiver
 // finishes executing.  Only a block's first execution may be Waited upon or trigger Notify callbacks.
-func (b *Block) NotifyBlock(q *Queue, n *Block) {
+func (b *Block) notifyBlock(q *Queue, n *Block) {
 	go func() {
 		b.Wait(FOREVER)
-		q.AsyncBlock(n)
+		q.asyncBlock(n)
 	}()
 }
 
+// blockCreateFromInterface accepts either a func() or *Block argument and returns a *Block that is either the
+// argument passed to the function, or the func() wrapped in a Block of the specified type.
+func blockCreateFromInterface(f interface{}, t BlockType) *Block {
+	switch f.(type) {
+	case func():
+		return BlockCreate(t, f.(func()))
+	case *Block:
+		return f.(*Block)
+	default:
+		panic("f must be func() or *Block")
+	}
+}
+
 // Notify causes the notification task to be submitted to the specified queue when the receiver finishes
-// executing.
-func (b *Block) Notify(q *Queue, f func()) {
-	b.NotifyBlock(q, BlockCreate(Default, f))
+// executing.  f must be a func() or *Block.
+func (b *Block) Notify(q *Queue, f interface{}) {
+	nb := blockCreateFromInterface(f, Default)
+	b.notifyBlock(q, nb)
 }
 
 // Wait returns when the receiver finished executing or at the specified timeout.  If timeout occurs,
@@ -292,38 +306,41 @@ func (q *Queue) executeBlock(b *Block) {
 	}()
 }
 
-// AsyncBlock submits the block for execution and returns immediately.
-func (q *Queue) AsyncBlock(b *Block) {
+// asyncBlock submits the block for execution and returns immediately.
+func (q *Queue) asyncBlock(b *Block) {
 	q.enqueue(b)
 }
 
-// Async submits the task for execution and returns immediately.
-func (q *Queue) Async(f func()) {
-	q.AsyncBlock(BlockCreate(Default, f))
+// Async submits the task for execution and returns immediately. f should be either a func() or a *Block.
+func (q *Queue) Async(f interface{}) {
+	b := blockCreateFromInterface(f, Default)
+	q.asyncBlock(b)
 }
 
-// SyncBlock submits the block for execution and blocks until it finishes.
-func (q *Queue) SyncBlock(b *Block) {
+// syncBlock submits the block for execution and blocks until it finishes.
+func (q *Queue) syncBlock(b *Block) {
 	q.enqueue(b)
 	b.Wait(FOREVER)
 }
 
-// Sync submits the task for execution and blocks until it finishes.
-func (q *Queue) Sync(f func()) {
-	q.SyncBlock(BlockCreate(Default, f))
+// Sync submits the task for execution and blocks until it finishes.  f should be a func() or a *Block.
+func (q *Queue) Sync(f interface{}) {
+	b := blockCreateFromInterface(f, Default)
+	q.syncBlock(b)
 }
 
-// AfterBlock submits the block for execution on the specified queue after the specified
+// afterBlock submits the block for execution on the specified queue after the specified
 // time has passed.
-func (q *Queue) AfterBlock(d time.Duration, b *Block) {
+func (q *Queue) afterBlock(d time.Duration, b *Block) {
 	<-time.After(d)
-	q.AsyncBlock(b)
+	q.asyncBlock(b)
 }
 
 // After submits the task for execution on the specified queue after the specified
-// time has passed.
-func (q *Queue) After(d time.Duration, f func()) {
-	q.AfterBlock(d, BlockCreate(Default, f))
+// time has passed. f should be either a func() or a *Block.
+func (q *Queue) After(d time.Duration, f interface{}) {
+	b := blockCreateFromInterface(f, Default)
+	q.afterBlock(d, b)
 }
 
 // Apply submits a task to the specified queue, waiting for it to be executed the specified number
@@ -336,7 +353,7 @@ func (q *Queue) Apply(iterations int, f func(iter int)) {
 			f(j)
 			c <- struct{}{}
 		}
-		q.AsyncBlock(BlockCreate(Default, iterfunc))
+		q.asyncBlock(BlockCreate(Default, iterfunc))
 	}
 
 	for i := 0; i < iterations; i++ {
@@ -376,10 +393,10 @@ func (q *Queue) Resume() {
 	}
 }
 
-// BarrierAsyncBlock submits the block as a barrier on the specified queue and returns immediately.
+// barrierAsyncBlock submits the block as a barrier on the specified queue and returns immediately.
 // The barrier will not execute until all previously scheduled tasks are complete.
 // Subsequently scheduled tasks will wait for the barrier block to complete before executing.
-func (q *Queue) BarrierAsyncBlock(b *Block) {
+func (q *Queue) barrierAsyncBlock(b *Block) {
 	b.blockType = Barrier
 	q.enqueue(b)
 }
@@ -387,14 +404,16 @@ func (q *Queue) BarrierAsyncBlock(b *Block) {
 // BarrierAsync submits the task as a barrier on the specified queue and returns immediately.
 // The barrier will not execute until all previously scheduled tasks are complete.
 // Subsequently scheduled tasks will wait for the barrier block to complete before executing.
-func (q *Queue) BarrierAsync(f func()) {
-	q.BarrierAsyncBlock(BlockCreate(Barrier, f))
+// f should be either a func() or a *Block.
+func (q *Queue) BarrierAsync(f interface{}) {
+	b := blockCreateFromInterface(f, Barrier)
+	q.barrierAsyncBlock(b)
 }
 
-// BarrierSyncBlock submits the block as a barrier on the specified queue and returns when the barrier completes.
+// barrierSyncBlock submits the block as a barrier on the specified queue and returns when the barrier completes.
 // The barrier will not execute until all previously scheduled tasks are complete.
 // Subsequently scheduled tasks will wait for the barrier block to complete before executing.
-func (q *Queue) BarrierSyncBlock(b *Block) {
+func (q *Queue) barrierSyncBlock(b *Block) {
 	b.blockType = Barrier
 	q.enqueue(b)
 	b.Wait(FOREVER)
@@ -404,7 +423,8 @@ func (q *Queue) BarrierSyncBlock(b *Block) {
 // The barrier will not execute until all previously scheduled tasks are complete.
 // Subsequently scheduled tasks will wait for the barrier block to complete before executing.
 func (q *Queue) BarrierSync(f func()) {
-	q.BarrierSyncBlock(BlockCreate(Barrier, f))
+	b := blockCreateFromInterface(f, Barrier)
+	q.barrierSyncBlock(b)
 }
 
 func (q *Queue) enqueue(b *Block) {
@@ -448,10 +468,10 @@ func GroupCreate() *Group {
 	}
 }
 
-// AsyncBlock submits a block for execution on the specified queue and adds it to the receiving group.
-func (g *Group) AsyncBlock(q *Queue, b *Block) {
+// asyncBlock submits a block for execution on the specified queue and adds it to the receiving group.
+func (g *Group) asyncBlock(q *Queue, b *Block) {
 	g.Enter()
-	q.AsyncBlock(b)
+	q.asyncBlock(b)
 	go func() {
 		b.Wait(FOREVER)
 		g.Leave()
@@ -459,23 +479,26 @@ func (g *Group) AsyncBlock(q *Queue, b *Block) {
 }
 
 // Async submits a task for execution on the specified queue and adds it to the receiving group.
-func (g *Group) Async(q *Queue, f func()) {
-	g.AsyncBlock(q, BlockCreate(Default, f))
+// f should be either a func() or a *Block.
+func (g *Group) Async(q *Queue, f interface{}) {
+	b := blockCreateFromInterface(f, Default)
+	g.asyncBlock(q, b)
 }
 
-// NotifyBlock sumbits a block to the specified queue when all previously added
+// notifyBlock sumbits a block to the specified queue when all previously added
 // tasks have completed.
-func (g *Group) NotifyBlock(q *Queue, b *Block) {
+func (g *Group) notifyBlock(q *Queue, b *Block) {
 	go func() {
 		g.Wait(FOREVER)
-		q.AsyncBlock(b)
+		q.asyncBlock(b)
 	}()
 }
 
 // Notify sumbits a task to the specified queue when all previously added
-// tasks have completed.
-func (g *Group) Notify(q *Queue, f func()) {
-	g.NotifyBlock(q, BlockCreate(Default, f))
+// tasks have completed.  f should be either a func() or a *Block.
+func (g *Group) Notify(q *Queue, f interface{}) {
+	b := blockCreateFromInterface(f, Default)
+	g.notifyBlock(q, b)
 }
 
 // Wait returns true if the group's tasks complete before the specified timeout.
