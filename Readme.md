@@ -5,7 +5,7 @@ A Go module that provides functionality similar to [Apple's dispatch API](https:
 ## Serializing tasks
 
 Serial queues can asynchronously execute tasks, one-at-a-time.  This can be useful for
-protect operations that are not safe for concurrent execution, such as appending to a
+protecting operations that are not safe for concurrent execution, such as appending to a
 list.
 
 ```
@@ -31,10 +31,12 @@ for i := 0; i < 20; i++ {
 
 ## Waiting for a group of asynchronous tasks to complete
 
-Groups can be used to track the execution of groups of tasks and know when they are complete.
-Here's an example of a Hotel that opens for business and accepts guests for a period of time,
-stops accepting new guests at some point, and then closes when all of the guests have checked
-out.
+Groups can be used to track the execution of groups of tasks and receive notification when they are complete.
+They are useful in designing systems that need to perform actions when an unknown quantity of asynchronously
+generated tasks have completed.
+
+Here's an example of a simulated Hotel service that opens for business, accepts guests for a period of time,
+stops accepting new guests at some point, and then closes when all of the guests have checked out.
 
 ```
 type Guest struct {
@@ -110,7 +112,8 @@ Tasks can be submitted to queues as barriers so that all previously scheduled an
 complete before the barrier task executes and all subsequently scheduled tasks will wait for the barrier
 to finish before executing.
 
-This could be useful for performing operations in batches while asynchronously accepting new tasks:
+They are useful for performing batche operations on asynchronously generated data while continuously
+accepting new data.
 
 ```
 var taskQueue * Queue
@@ -147,4 +150,3 @@ func main() {
 	Println("Done running tasks and batch jobs: %v", presssureLog)
 }
 ```
-
