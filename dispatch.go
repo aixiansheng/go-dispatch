@@ -65,8 +65,26 @@ type Group struct {
 	waitersCond  *sync.Cond
 }
 
-// BlockCreate creates a block of the specified type
-func BlockCreate(t BlockType, f func()) *Block {
+// BlockCreate creates a block that can potentially be executed more than once, unless
+// it is executed with Once().
+func BlockCreate(f func()) *Block {
+	return blockCreateType(Default, f)
+}
+
+// BlockCreateBarrier creates a block that, once submitted to a queue, will wait for all
+// previously submitted blocks to finish executing before it executes.  All subsequently
+// enqueued blocks will wait for the barrier block to complete before executing.
+func BlockCreateBarrier(f func()) *Block {
+	return blockCreateType(Barrier, f)
+}
+
+// BlockCreateOnce creates a block that will only be performed once.
+func BlockCreateOnce(f func()) *Block {
+	return blockCreateType(Once, f)
+}
+
+// blockCreateType creates a block of the specified type
+func blockCreateType(t BlockType, f func()) *Block {
 	return &Block{
 		f:           f,
 		blockType:   t,
@@ -115,7 +133,7 @@ func (b *Block) notifyBlock(q *Queue, n *Block) {
 func blockCreateFromInterface(f interface{}, t BlockType) *Block {
 	switch f.(type) {
 	case func():
-		return BlockCreate(t, f.(func()))
+		return blockCreateType(t, f.(func()))
 	case *Block:
 		return f.(*Block)
 	default:
@@ -353,7 +371,7 @@ func (q *Queue) Apply(iterations int, f func(iter int)) {
 			f(j)
 			c <- struct{}{}
 		}
-		q.asyncBlock(BlockCreate(Default, iterfunc))
+		q.asyncBlock(BlockCreate(iterfunc))
 	}
 
 	for i := 0; i < iterations; i++ {

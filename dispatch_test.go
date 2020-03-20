@@ -9,7 +9,7 @@ import (
 func TestBlockNotifyOrder(t *testing.T) {
 	x := 0
 	c := make(chan struct{})
-	b := BlockCreate(Default, func() {
+	b := BlockCreate(func() {
 		x++
 		<-c
 	})
@@ -37,7 +37,7 @@ func TestBlockNotifyOrder(t *testing.T) {
 
 func TestBlockWait(t *testing.T) {
 	c := make(chan struct{})
-	b := BlockCreate(Default, func() {
+	b := BlockCreate(func() {
 		<-c
 	})
 
@@ -57,7 +57,7 @@ func TestBlockWait(t *testing.T) {
 func TestBlockNotifyCancel(t *testing.T) {
 	x := 0
 	q := QueueCreateConcurrent()
-	b := BlockCreate(Default, func() {
+	b := BlockCreate(func() {
 		x++
 	})
 
@@ -81,7 +81,7 @@ func TestBlockNotifyCancel(t *testing.T) {
 }
 
 func TestBlockPerformMultiple(t *testing.T) {
-	b := BlockCreate(Default, func() {
+	b := BlockCreate(func() {
 		x := 1
 		x++
 	})
@@ -92,11 +92,11 @@ func TestBlockPerformMultiple(t *testing.T) {
 
 func TestOnce(t *testing.T) {
 	x := 0
-	b := BlockCreate(Default, func() {
+	b := BlockCreate(func() {
 		x++
 	})
 
-	b2 := BlockCreate(Once, func() {
+	b2 := BlockCreateOnce(func() {
 		x++
 	})
 
@@ -627,7 +627,7 @@ func TestGroupWaitMultipleAsyncOnSyncQueue(t *testing.T) {
 
 func TestBlockPerform(t *testing.T) {
 	var x uint64
-	b := BlockCreate(Default, func() {
+	b := BlockCreate(func() {
 		atomic.AddUint64(&x, 1)
 	})
 	b.Perform()
@@ -646,7 +646,7 @@ func TestBlockNotify(t *testing.T) {
 		<-c
 		atomic.AddUint64(&x, 1)
 	})
-	b := BlockCreate(Default, func() {
+	b := BlockCreate(func() {
 		atomic.AddUint64(&x, 1)
 	})
 	q.Async(b)
