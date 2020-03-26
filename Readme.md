@@ -60,7 +60,7 @@ Groups can be used to track the execution of groups of tasks and receive notific
 They are useful in designing systems that need to perform actions when an unknown quantity of asynchronously
 generated tasks have completed.
 
-Here's an example of a simulated Hotel service that opens for business, accepts guests for a period of time,
+Here's an example of a simulated-hotel service that opens for business, accepts guests for a period of time,
 stops accepting new guests at some point, and then closes when all of the guests have checked out.
 
 ```
@@ -134,11 +134,12 @@ func main() {
 ## Ensuring that a task happens in isolation
 
 Tasks can be submitted to queues as barriers so that all previously scheduled and executing tasks must
-complete before the barrier task executes and all subsequently scheduled tasks will wait for the barrier
-to finish before executing.
+complete before the barrier task executes.  In addition, all subsequently scheduled tasks will also wait
+for the barrier to finish before executing.
 
-They are useful for performing batche operations on asynchronously generated data while continuously
+Barriers are useful for performing batch operations on asynchronously generated data while continuously
 accepting new data.
+
 
 ```
 var taskQueue * Queue
